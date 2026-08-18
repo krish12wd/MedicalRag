@@ -10,3 +10,4 @@ pypdf
 sentence-transformers
 flashrank
 python-dotenv
+gunicorn
