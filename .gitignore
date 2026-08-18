@@ -16,10 +16,6 @@ instance/
 app.db
 *.db
 
-# Chroma vector database
-chroma_db/
-
-# FlashRank cache
 flashrank_cache/
 
 # macOS
