@@ -11,3 +11,4 @@ sentence-transformers
 flashrank
 python-dotenv
 gunicorn
+flask
