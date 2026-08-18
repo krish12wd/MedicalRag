@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Sign In - MediGuide AI</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+</head>
+
+<body class="auth-page">
+
+    <div class="auth-wrapper">
+
+        <div class="auth-left">
+
+            <div class="auth-brand">
+
+                <div class="auth-logo">
+                    ✚
+                </div>
+
+                <div>
+                    <h1>MediGuide AI</h1>
+
+                    <p>
+                        Medical Guideline Assistant
+                    </p>
+                </div>
+
+            </div>
+
+
+            <div class="auth-hero">
+
+                <div class="hero-badge">
+                    <span></span>
+                    AI Medical Assistant
+                </div>
+
+                <h2>
+                    Smarter access to
+                    <span>medical guidelines.</span>
+                </h2>
+
+                <p>
+                    Ask questions, explore treatment guidelines,
+                    and continue your medical conversations with
+                    document-grounded AI.
+                </p>
+
+            </div>
+
+
+            <div class="auth-features">
+
+                <div class="auth-feature">
+
+                    <div class="auth-feature-icon">
+                        🔎
+                    </div>
+
+                    <div>
+                        <strong>
+                            Guideline Grounded
+                        </strong>
+
+                        <span>
+                            Answers based on the provided
+                            Standard Treatment Guidelines.
+                        </span>
+                    </div>
+
+                </div>
+
+
+                <div class="auth-feature">
+
+                    <div class="auth-feature-icon">
+                        🧠
+                    </div>
+
+                    <div>
+                        <strong>
+                            Agentic AI
+                        </strong>
+
+                        <span>
+                            Intelligent reasoning with
+                            LangGraph and medical retrieval.
+                        </span>
+                    </div>
+
+                </div>
+
+
+                <div class="auth-feature">
+
+                    <div class="auth-feature-icon">
+                        💬
+                    </div>
+
+                    <div>
+                        <strong>
+                            Your Conversations
+                        </strong>
+
+                        <span>
+                            Keep your conversations organized
+                            and accessible.
+                        </span>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="auth-left-footer">
+                <span class="footer-dot"></span>
+
+                Powered by RAG · Chroma · FlashRank · Groq
+            </div>
+
+        </div>
+
+
+        <div class="auth-right">
+
+            <div class="auth-card">
+
+                <div class="mobile-brand">
+
+                    <div class="auth-logo small">
+                        ✚
+                    </div>
+
+                    <strong>
+                        MediGuide AI
+                    </strong>
+
+                </div>
+
+
+                <div class="auth-heading">
+
+                    <div class="auth-label">
+                        WELCOME BACK
+                    </div>
+
+                    <h2>
+                        Sign in to continue
+                    </h2>
+
+                    <p>
+                        Continue your medical guideline
+                        conversations.
+                    </p>
+
+                </div>
+
+
+                {% if error %}
+
+                <div class="auth-error">
+
+                    <span>!</span>
+
+                    <div>
+                        {{ error }}
+                    </div>
+
+                </div>
+
+                {% endif %}
+
+
+                <form
+                    method="POST"
+                    action="/login"
+                    class="auth-form"
+                >
+
+                    <div class="form-group">
+
+                        <label for="email">
+                            Email address
+                        </label>
+
+                        <div class="input-wrapper">
+
+                            <span class="input-icon">
+                                ✉
+                            </span>
+
+                            <input
+                                type="email"
+                                id="email"
+                                name="email"
+                                placeholder="you@example.com"
+                                autocomplete="email"
+                                required
+                            >
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <div class="password-label-row">
+
+                            <label for="password">
+                                Password
+                            </label>
+
+                        </div>
+
+                        <div class="input-wrapper">
+
+                            <span class="input-icon">
+                                🔒
+                            </span>
+
+                            <input
+                                type="password"
+                                id="password"
+                                name="password"
+                                placeholder="Enter your password"
+                                autocomplete="current-password"
+                                required
+                            >
+
+                        </div>
+
+                    </div>
+
+
+                    <button
+                        type="submit"
+                        class="auth-button"
+                    >
+
+                        <span>
+                            Sign In
+                        </span>
+
+                        <span class="button-arrow">
+                            →
+                        </span>
+
+                    </button>
+
+                </form>
+
+
+                <div class="auth-divider">
+                    <span>New to MediGuide?</span>
+                </div>
+
+
+                <a
+                    href="/register"
+                    class="secondary-auth-button"
+                >
+                    Create an account
+                </a>
+
+
+                <div class="auth-disclaimer">
+
+                    <div class="disclaimer-icon">
+                        ⚠
+                    </div>
+
+                    <div>
+
+                        <strong>
+                            Important
+                        </strong>
+
+                        <p>
+                            This assistant provides information
+                            based only on the provided Standard
+                            Treatment Guidelines.
+                        </p>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="auth-bottom-text">
+                MediGuide AI · Medical Guideline Assistant
+            </div>
+
+        </div>
+
+    </div>
+
+</body>
+
+</html>

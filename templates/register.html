@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Create Account - MediGuide AI</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+</head>
+
+<body class="auth-page">
+
+    <div class="auth-wrapper">
+
+        <div class="auth-left">
+
+            <div class="auth-brand">
+
+                <div class="auth-logo">
+                    ✚
+                </div>
+
+                <div>
+
+                    <h1>
+                        MediGuide AI
+                    </h1>
+
+                    <p>
+                        Medical Guideline Assistant
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <div class="auth-hero">
+
+                <div class="hero-badge">
+
+                    <span></span>
+
+                    Join MediGuide
+
+                </div>
+
+
+                <h2>
+
+                    Your medical
+                    <span>guideline assistant.</span>
+
+                </h2>
+
+
+                <p>
+
+                    Create your account and keep your
+                    medical guideline conversations
+                    organized in one place.
+
+                </p>
+
+            </div>
+
+
+            <div class="auth-features">
+
+                <div class="auth-feature">
+
+                    <div class="auth-feature-icon">
+                        📚
+                    </div>
+
+                    <div>
+
+                        <strong>
+                            Guideline Knowledge
+                        </strong>
+
+                        <span>
+                            Search information from the
+                            provided medical guidelines.
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="auth-feature">
+
+                    <div class="auth-feature-icon">
+                        ⚡
+                    </div>
+
+                    <div>
+
+                        <strong>
+                            Fast Retrieval
+                        </strong>
+
+                        <span>
+                            Semantic search and intelligent
+                            reranking for relevant answers.
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="auth-feature">
+
+                    <div class="auth-feature-icon">
+                        💬
+                    </div>
+
+                    <div>
+
+                        <strong>
+                            Conversation History
+                        </strong>
+
+                        <span>
+                            Your conversations stay associated
+                            with your account.
+                        </span>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="auth-left-footer">
+
+                <span class="footer-dot"></span>
+
+                Powered by RAG · Chroma · FlashRank · Groq
+
+            </div>
+
+        </div>
+
+
+        <div class="auth-right">
+
+            <div class="auth-card register-card">
+
+                <div class="mobile-brand">
+
+                    <div class="auth-logo small">
+                        ✚
+                    </div>
+
+                    <strong>
+                        MediGuide AI
+                    </strong>
+
+                </div>
+
+
+                <div class="auth-heading">
+
+                    <div class="auth-label">
+                        GET STARTED
+                    </div>
+
+                    <h2>
+                        Create your account
+                    </h2>
+
+                    <p>
+                        Start your personalized
+                        MediGuide experience.
+                    </p>
+
+                </div>
+
+
+                {% if error %}
+
+                <div class="auth-error">
+
+                    <span>!</span>
+
+                    <div>
+                        {{ error }}
+                    </div>
+
+                </div>
+
+                {% endif %}
+
+
+                <form
+                    method="POST"
+                    action="/register"
+                    class="auth-form"
+                >
+
+                    <div class="form-group">
+
+                        <label for="name">
+                            Full name
+                        </label>
+
+                        <div class="input-wrapper">
+
+                            <span class="input-icon">
+                                👤
+                            </span>
+
+                            <input
+                                type="text"
+                                id="name"
+                                name="name"
+                                placeholder="Enter your name"
+                                autocomplete="name"
+                                required
+                            >
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="email">
+                            Email address
+                        </label>
+
+                        <div class="input-wrapper">
+
+                            <span class="input-icon">
+                                ✉
+                            </span>
+
+                            <input
+                                type="email"
+                                id="email"
+                                name="email"
+                                placeholder="you@example.com"
+                                autocomplete="email"
+                                required
+                            >
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="password">
+                            Password
+                        </label>
+
+                        <div class="input-wrapper">
+
+                            <span class="input-icon">
+                                🔒
+                            </span>
+
+                            <input
+                                type="password"
+                                id="password"
+                                name="password"
+                                placeholder="Create a password"
+                                autocomplete="new-password"
+                                required
+                            >
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label for="confirm_password">
+                            Confirm password
+                        </label>
+
+                        <div class="input-wrapper">
+
+                            <span class="input-icon">
+                                🔐
+                            </span>
+
+                            <input
+                                type="password"
+                                id="confirm_password"
+                                name="confirm_password"
+                                placeholder="Confirm your password"
+                                autocomplete="new-password"
+                                required
+                            >
+
+                        </div>
+
+                    </div>
+
+
+                    <button
+                        type="submit"
+                        class="auth-button"
+                    >
+
+                        <span>
+                            Create Account
+                        </span>
+
+                        <span class="button-arrow">
+                            →
+                        </span>
+
+                    </button>
+
+                </form>
+
+
+                <div class="auth-divider">
+
+                    <span>
+                        Already have an account?
+                    </span>
+
+                </div>
+
+
+                <a
+                    href="/login"
+                    class="secondary-auth-button"
+                >
+                    Sign in instead
+                </a>
+
+
+                <div class="auth-disclaimer">
+
+                    <div class="disclaimer-icon">
+                        ⚠
+                    </div>
+
+                    <div>
+
+                        <strong>
+                            Important
+                        </strong>
+
+                        <p>
+                            This assistant provides information
+                            based only on the provided Standard
+                            Treatment Guidelines.
+                        </p>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="auth-bottom-text">
+
+                MediGuide AI · Medical Guideline Assistant
+
+            </div>
+
+        </div>
+
+    </div>
+
+</body>
+
+</html>

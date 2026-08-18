@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>MediGuide AI</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+</head>
+
+<body>
+
+<div class="app">
+
+    <aside class="sidebar">
+
+        <div class="brand">
+
+            <div class="brand-logo">
+                ✚
+            </div>
+
+            <div class="brand-text">
+
+                <h1>
+                    MediGuide
+                </h1>
+
+                <span>
+                    AI Medical Assistant
+                </span>
+
+            </div>
+
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="sidebar-title">
+            KNOWLEDGE SOURCE
+        </div>
+
+        <div class="source-card">
+
+            <div class="source-icon">
+                📖
+            </div>
+
+            <div class="source-info">
+
+                <strong>
+                    Standard Treatment
+                    Guidelines
+                </strong>
+
+                <span>
+                    PDF Knowledge Base
+                </span>
+
+            </div>
+
+            <div class="source-status"></div>
+
+        </div>
+
+        <button
+            id="clearButton"
+            class="clear-button"
+        >
+
+            <span>
+                ↻
+            </span>
+
+            New Conversation
+
+        </button>
+
+        <div class="history-section">
+
+            <div class="history-header">
+                CHAT HISTORY
+            </div>
+
+            <div
+                id="historyList"
+                class="history-list"
+            >
+
+                <div class="history-empty">
+                    Loading conversations...
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="sidebar-bottom">
+
+            <div class="user-section">
+
+                <div class="user-avatar-small">
+
+                    {{ user.name[0]|upper }}
+
+                </div>
+
+                <div class="user-details">
+
+                    <strong>
+                        {{ user.name }}
+                    </strong>
+
+                    <span>
+                        {{ user.email }}
+                    </span>
+
+                </div>
+
+                <a
+                    href="/logout"
+                    class="logout-button"
+                >
+                    Logout
+                </a>
+
+            </div>
+
+            <div class="disclaimer">
+
+                <div class="disclaimer-title">
+                    ⚠ Important
+                </div>
+
+                <p>
+                    This assistant provides
+                    information based only on
+                    the provided Standard
+                    Treatment Guidelines.
+                </p>
+
+                <p>
+                    It does not replace
+                    professional medical
+                    evaluation or clinical
+                    judgment.
+                </p>
+
+            </div>
+
+        </div>
+
+    </aside>
+
+    <main class="main">
+
+        <header class="header">
+
+            <div class="header-left">
+
+                <div class="mobile-logo">
+                    ✚
+                </div>
+
+                <div>
+
+                    <h2>
+                        Medical Guideline Assistant
+                    </h2>
+
+                    <p>
+                        Ask questions from the
+                        Standard Treatment Guidelines
+                    </p>
+
+                </div>
+
+            </div>
+
+            <div class="online-status">
+
+                <span class="online-dot"></span>
+
+                <span>
+                    Agent Online
+                </span>
+
+            </div>
+
+        </header>
+
+        <section
+            id="chatContainer"
+            class="chat-container"
+        >
+
+            <div
+                id="welcome"
+                class="welcome"
+            >
+
+                <div class="welcome-logo">
+                    🩺
+                </div>
+
+                <h2>
+
+                    Welcome to
+                    <span>
+                        MediGuide AI
+                    </span>
+
+                </h2>
+
+                <p>
+                    Ask questions about the
+                    Standard Treatment Guidelines
+                    and get document-grounded answers.
+                </p>
+
+                <div class="feature-grid">
+
+                    <div class="feature-card">
+
+                        <div class="feature-icon blue">
+                            🔎
+                        </div>
+
+                        <div>
+
+                            <strong>
+                                RAG Search
+                            </strong>
+
+                            <span>
+                                Searches the guideline
+                                knowledge base
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                    <div class="feature-card">
+
+                        <div class="feature-icon purple">
+                            ⚡
+                        </div>
+
+                        <div>
+
+                            <strong>
+                                Smart Reranking
+                            </strong>
+
+                            <span>
+                                FlashRank selects the
+                                most relevant content
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                    <div class="feature-card">
+
+                        <div class="feature-icon green">
+                            🧠
+                        </div>
+
+                        <div>
+
+                            <strong>
+                                Agentic AI
+                            </strong>
+
+                            <span>
+                                LangGraph manages
+                                reasoning and tools
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <div class="input-section">
+
+            <div class="input-container">
+
+                <textarea
+                    id="messageInput"
+                    rows="1"
+                    placeholder="Ask a question about the Standard Treatment Guidelines..."
+                ></textarea>
+
+                <button
+                    id="sendButton"
+                    class="send-button"
+                    title="Send message"
+                >
+
+                    <span>
+                        ➤
+                    </span>
+
+                </button>
+
+            </div>
+
+            <div class="input-footer">
+
+                <span>
+                    MediGuide AI uses only the
+                    provided guideline document
+                </span>
+
+                <span class="keyboard-hint">
+                    Enter ↵ to send
+                </span>
+
+            </div>
+
+        </div>
+
+    </main>
+
+</div>
+
+<script
+    src="{{ url_for('static', filename='script.js') }}"
+></script>
+
+</body>
+
+</html>
