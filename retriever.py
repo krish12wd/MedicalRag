@@ -3,6 +3,7 @@ from langchain_chroma import Chroma
 
 from flashrank import Ranker, RerankRequest
 
+
 CHROMA_DIR = "./chroma_db"
 
 COLLECTION_NAME = "medical_guidelines"
@@ -10,6 +11,11 @@ COLLECTION_NAME = "medical_guidelines"
 EMBEDDING_MODEL = (
     "sentence-transformers/all-MiniLM-L6-v2"
 )
+
+
+# ============================================================
+# EMBEDDINGS
+# ============================================================
 
 print("Loading embedding model...")
 
@@ -25,6 +31,11 @@ embeddings = HuggingFaceEmbeddings(
 
 print("Embedding model loaded.")
 
+
+# ============================================================
+# CHROMA
+# ============================================================
+
 print("Loading Chroma database...")
 
 vectorstore = Chroma(
@@ -35,12 +46,22 @@ vectorstore = Chroma(
 
 print("Chroma database loaded.")
 
+
+# ============================================================
+# MEDICAL RETRIEVER
+# ============================================================
+
 retriever = vectorstore.as_retriever(
     search_type="similarity",
     search_kwargs={
         "k": 15
     },
 )
+
+
+# ============================================================
+# FLASHRANK
+# ============================================================
 
 print("Loading FlashRank reranker...")
 
@@ -50,6 +71,11 @@ ranker = Ranker(
 )
 
 print("FlashRank loaded.")
+
+
+# ============================================================
+# RERANK
+# ============================================================
 
 def rerank_documents(
     query: str,
@@ -63,9 +89,7 @@ def rerank_documents(
 
     passages = []
 
-    for index, document in enumerate(
-        documents
-    ):
+    for index, document in enumerate(documents):
 
         passages.append(
             {
@@ -114,16 +138,19 @@ def rerank_documents(
 
     return final_documents
 
+
+# ============================================================
+# MEDICAL GUIDELINE SEARCH
+# ============================================================
+
 def search_guidelines(
     query: str,
     retrieval_k: int = 15,
-    rerank_k: int = 2,
-    min_score: float = 0.0,
+    rerank_k: int = 5,
+    min_score: float = 0.30,
 ):
 
-    print(
-        "\nSearching Chroma..."
-    )
+    print("\nSearching Chroma...")
 
     documents = retriever.invoke(
         query
@@ -145,7 +172,9 @@ def search_guidelines(
     )
 
     print(
-        f"Returning top {len(documents)} relevant reranked chunks."
+        f"Returning top "
+        f"{len(documents)} "
+        f"relevant reranked chunks."
     )
 
     return documents

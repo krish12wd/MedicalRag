@@ -7,63 +7,363 @@ const historyList = document.getElementById("historyList");
 let currentConversationId =
     localStorage.getItem("currentConversationId");
 
-function addMessage(content, type, createdAt = null) {
-    const welcome = document.getElementById("welcome");
+function formatAssistantMessage(content) {
+    if (!content) {
+        return "";
+    }
+
+    let text = String(content);
+
+    // Normalize line endings
+    text = text.replace(/\r\n/g, "\n");
+    text = text.replace(/\r/g, "\n");
+
+    // Remove excessive blank lines first
+    text = text.replace(/\n\s*\n+/g, "\n");
+
+    // Section headings
+    text = text.replace(
+        /^\s*(For now:|Medicine:|See a doctor if:)\s*$/gim,
+        "\n$1\n"
+    );
+
+    // Convert existing -, *, • bullets to a consistent bullet
+    text = text.replace(
+        /^\s*[-*•]\s*/gm,
+        "• "
+    );
+
+    // If the backend sends plain lines after a section heading,
+    // convert each line into a bullet.
+    const sectionNames = [
+        "For now:",
+        "Medicine:",
+        "See a doctor if:"
+    ];
+
+    sectionNames.forEach(function (section) {
+
+        const sectionRegex = new RegExp(
+            section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+            "i"
+        );
+
+        const match = text.match(sectionRegex);
+
+        if (!match) {
+            return;
+        }
+
+        const start = match.index + match[0].length;
+
+        let end = text.length;
+
+        sectionNames.forEach(function (otherSection) {
+
+            if (
+                otherSection.toLowerCase() ===
+                section.toLowerCase()
+            ) {
+                return;
+            }
+
+            const otherRegex = new RegExp(
+                otherSection.replace(
+                    /[.*+?^${}()|[\]\\]/g,
+                    "\\$&"
+                ),
+                "i"
+            );
+
+            const remaining =
+                text.slice(start);
+
+            const otherMatch =
+                remaining.match(otherRegex);
+
+            if (
+                otherMatch &&
+                start + otherMatch.index < end
+            ) {
+                end =
+                    start + otherMatch.index;
+            }
+        });
+
+        const before =
+            text.slice(0, start);
+
+        const sectionContent =
+            text.slice(start, end)
+                .trim();
+
+        if (!sectionContent) {
+            return;
+        }
+
+        // Already has bullets
+        if (sectionContent.includes("•")) {
+            return;
+        }
+
+        // Split each sentence into a bullet
+        const points =
+            sectionContent
+                .split(/(?<=[.!?])\s+/)
+                .map(function (item) {
+                    return item.trim();
+                })
+                .filter(Boolean);
+
+        if (!points.length) {
+            return;
+        }
+
+        const formatted =
+            "\n" +
+            points
+                .map(function (item) {
+                    return "• " + item;
+                })
+                .join("\n") +
+            "\n";
+
+        text =
+            before +
+            formatted +
+            text.slice(end);
+    });
+
+    // Make sure existing bullets are on separate lines
+    text = text.replace(
+        /\s*•\s*/g,
+        "\n• "
+    );
+
+    // Remove excessive blank lines
+    text = text.replace(
+        /\n{2,}/g,
+        "\n"
+    );
+
+    // Remove spaces around each line
+    text = text
+        .split("\n")
+        .map(function (line) {
+            return line.trim();
+        })
+        .filter(function (line) {
+            return line.length > 0;
+        })
+        .join("\n");
+
+    return text.trim();
+}
+
+
+// ============================================================
+// ADD MESSAGE
+// ============================================================
+
+function addMessage(
+    content,
+    type,
+    createdAt = null,
+    showSuggestionButtons = false
+) {
+    const welcome =
+        document.getElementById("welcome");
 
     if (welcome) {
         welcome.remove();
     }
 
-    const row = document.createElement("div");
+    const row =
+        document.createElement("div");
 
     row.className =
         type === "user"
             ? "message-row user"
             : "message-row assistant";
 
-    const avatar = document.createElement("div");
+    const avatar =
+        document.createElement("div");
 
-    avatar.className = "message-avatar";
+    avatar.className =
+        "message-avatar";
 
     avatar.textContent =
         type === "user"
             ? "👤"
             : "🩺";
 
-    const wrapper = document.createElement("div");
+    const wrapper =
+        document.createElement("div");
 
-    wrapper.className = "message-content";
+    wrapper.className =
+        "message-content";
 
-    const bubble = document.createElement("div");
+    const bubble =
+        document.createElement("div");
 
-    bubble.className = "message-bubble";
+    bubble.className =
+        "message-bubble";
 
-    bubble.textContent = content;
+    bubble.textContent =
+        content;
 
-    wrapper.appendChild(bubble);
+    wrapper.appendChild(
+        bubble
+    );
+
+    // ========================================================
+    // TIME
+    // ========================================================
 
     if (createdAt) {
-        const time = document.createElement("div");
 
-        time.className = "message-time";
+        const time =
+            document.createElement("div");
 
-        time.textContent = formatTime(createdAt);
+        time.className =
+            "message-time";
 
-        wrapper.appendChild(time);
+        time.textContent =
+            formatTime(createdAt);
+
+        wrapper.appendChild(
+            time
+        );
     }
+
+    // ========================================================
+    // HOME REMEDY + YOGA BUTTONS
+    // ========================================================
+
+    // ========================================================
+// HOME REMEDY + YOGA BUTTONS
+// ========================================================
+
+if (
+    type === "assistant" &&
+    showSuggestionButtons &&
+    currentConversationId
+) {
+
+    const suggestionContainer =
+        document.createElement("div");
+
+    suggestionContainer.className =
+        "suggestion-buttons";
+
+    // ----------------------------------------------------
+    // HOME REMEDIES
+    // ----------------------------------------------------
+
+    const homeRemedyButton =
+        document.createElement("button");
+
+    homeRemedyButton.type =
+        "button";
+
+    homeRemedyButton.className =
+        "suggestion-button";
+
+    homeRemedyButton.textContent =
+        "🌿 Suggestion for Home Remedies";
+
+    homeRemedyButton.addEventListener(
+        "click",
+        function () {
+
+            getHomeRemedySuggestions(
+                homeRemedyButton,
+                suggestionContainer
+            );
+
+        }
+    );
+
+    suggestionContainer.appendChild(
+        homeRemedyButton
+    );
+
+
+    // ----------------------------------------------------
+    // YOGA
+    // ----------------------------------------------------
+
+    const yogaButton =
+        document.createElement("button");
+
+    yogaButton.type =
+        "button";
+
+    yogaButton.className =
+        "suggestion-button";
+
+    yogaButton.textContent =
+        "🧘 Suggestion for Yoga";
+
+    yogaButton.addEventListener(
+        "click",
+        function () {
+
+            getYogaSuggestions(
+                yogaButton,
+                suggestionContainer
+            );
+
+        }
+    );
+
+    suggestionContainer.appendChild(
+        yogaButton
+    );
+
+
+    wrapper.appendChild(
+        suggestionContainer
+    );
+}
+
+
+    // ========================================================
+    // MESSAGE POSITION
+    // ========================================================
 
     if (type === "user") {
-        row.appendChild(wrapper);
-        row.appendChild(avatar);
+
+        row.appendChild(
+            wrapper
+        );
+
+        row.appendChild(
+            avatar
+        );
+
     } else {
-        row.appendChild(avatar);
-        row.appendChild(wrapper);
+
+        row.appendChild(
+            avatar
+        );
+
+        row.appendChild(
+            wrapper
+        );
     }
 
-    chatContainer.appendChild(row);
+    chatContainer.appendChild(
+        row
+    );
 
     scrollToBottom();
 }
+
+
+// ============================================================
+// FORMAT TIME
+// ============================================================
 
 function formatTime(timestamp) {
     if (!timestamp) {
@@ -82,17 +382,26 @@ function formatTime(timestamp) {
     });
 }
 
+
+// ============================================================
+// TYPING
+// ============================================================
+
 function showTyping() {
-    const welcome = document.getElementById("welcome");
+    const welcome =
+        document.getElementById("welcome");
 
     if (welcome) {
         welcome.remove();
     }
 
-    const row = document.createElement("div");
+    const row =
+        document.createElement("div");
 
     row.id = "typingMessage";
-    row.className = "message-row assistant";
+
+    row.className =
+        "message-row assistant";
 
     row.innerHTML = `
         <div class="message-avatar">
@@ -116,19 +425,25 @@ function showTyping() {
         </div>
     `;
 
-    chatContainer.appendChild(row);
+    chatContainer.appendChild(
+        row
+    );
 
     scrollToBottom();
 }
 
+
 function hideTyping() {
     const typing =
-        document.getElementById("typingMessage");
+        document.getElementById(
+            "typingMessage"
+        );
 
     if (typing) {
         typing.remove();
     }
 }
+
 
 function scrollToBottom() {
     chatContainer.scrollTo({
@@ -136,6 +451,11 @@ function scrollToBottom() {
         behavior: "smooth"
     });
 }
+
+
+// ============================================================
+// CLEAR CHAT UI
+// ============================================================
 
 function clearChatUI() {
     chatContainer.innerHTML = `
@@ -234,7 +554,13 @@ function clearChatUI() {
     scrollToBottom();
 }
 
+
+// ============================================================
+// SEND MESSAGE
+// ============================================================
+
 async function sendMessage() {
+
     const question =
         messageInput.value.trim();
 
@@ -249,37 +575,49 @@ async function sendMessage() {
 
     messageInput.value = "";
 
-    messageInput.style.height = "auto";
+    messageInput.style.height =
+        "auto";
 
-    sendButton.disabled = true;
+    sendButton.disabled =
+        true;
 
     showTyping();
 
     try {
-        const response = await fetch(
-            "/chat",
-            {
-                method: "POST",
 
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
+        const response =
+            await fetch(
+                "/chat",
+                {
+                    method: "POST",
 
-                body: JSON.stringify({
-                    message: question,
-                    conversation_id:
-                        currentConversationId
-                })
-            }
-        );
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        message:
+                            question,
+
+                        conversation_id:
+                            currentConversationId
+                    })
+                }
+            );
 
         const data =
             await response.json();
 
         hideTyping();
 
+
+        // ====================================================
+        // HTTP ERROR
+        // ====================================================
+
         if (!response.ok) {
+
             addMessage(
                 data.error ||
                 "Something went wrong.",
@@ -289,7 +627,13 @@ async function sendMessage() {
             return;
         }
 
+
+        // ====================================================
+        // BACKEND ERROR
+        // ====================================================
+
         if (data.error) {
+
             addMessage(
                 data.error,
                 "assistant"
@@ -297,6 +641,11 @@ async function sendMessage() {
 
             return;
         }
+
+
+        // ====================================================
+        // SAVE CONVERSATION ID
+        // ====================================================
 
         currentConversationId =
             data.conversation_id;
@@ -306,16 +655,28 @@ async function sendMessage() {
             currentConversationId
         );
 
+
+        // ====================================================
+        // FINAL MEDICAL ANSWER
+        //
+        // IMPORTANT:
+        // show_suggestions comes from Flask backend.
+        // ====================================================
+
         addMessage(
             data.answer,
-            "assistant"
+            "assistant",
+            null,
+            data.show_suggestions === true
         );
+
 
         await loadHistory();
 
         highlightCurrentConversation();
 
     } catch (error) {
+
         hideTyping();
 
         addMessage(
@@ -323,19 +684,220 @@ async function sendMessage() {
             "assistant"
         );
 
-        console.error(error);
+        console.error(
+            error
+        );
 
     } finally {
-        sendButton.disabled = false;
+
+        sendButton.disabled =
+            false;
 
         messageInput.focus();
     }
 }
 
-async function loadHistory() {
+
+// ============================================================
+// HOME REMEDY SUGGESTIONS
+// ============================================================
+
+async function getHomeRemedySuggestions(
+    button,
+    buttonContainer,
+    isFollowUp = false
+) {
+
+    if (!currentConversationId) {
+        return;
+    }
+
+    button.disabled = true;
+
+    button.innerHTML =
+        "🌿 Loading Home Remedies...";
+
     try {
+
         const response =
-            await fetch("/history");
+            await fetch(
+                "/suggestions/home-remedies",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        conversation_id:
+                            currentConversationId
+                    })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error ||
+                "Unable to get home remedy suggestions."
+            );
+        }
+
+        // Remove clicked button container
+        buttonContainer.remove();
+
+
+        // ====================================================
+        // HOME REMEDIES CLICKED
+        //
+        // If this is the FIRST suggestion:
+        // show Yoga.
+        //
+        // If this is the SECOND suggestion:
+        // show nothing.
+        // ====================================================
+
+        if (!isFollowUp) {
+
+            addSuggestionResult(
+                data.suggestions,
+                "yoga"
+            );
+
+        } else {
+
+            addSuggestionResult(
+                data.suggestions,
+                null
+            );
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Home remedy error:",
+            error
+        );
+
+        button.disabled = false;
+
+        button.innerHTML =
+            "🌿 Try Home Remedies Again";
+    }
+}
+
+
+// ============================================================
+// YOGA SUGGESTIONS
+// ============================================================
+
+async function getYogaSuggestions(
+    button,
+    buttonContainer,
+    isFollowUp = false
+) {
+
+    if (!currentConversationId) {
+        return;
+    }
+
+    button.disabled = true;
+
+    button.innerHTML =
+        "🧘 Finding Yoga...";
+
+    try {
+
+        const response =
+            await fetch(
+                "/suggestions/yoga",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        conversation_id:
+                            currentConversationId
+                    })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error ||
+                "Unable to get yoga suggestions."
+            );
+        }
+
+        // Remove clicked button container
+        buttonContainer.remove();
+
+
+        // ====================================================
+        // YOGA CLICKED
+        //
+        // If this is the FIRST suggestion:
+        // show Home Remedies.
+        //
+        // If this is the SECOND suggestion:
+        // show nothing.
+        // ====================================================
+
+        if (!isFollowUp) {
+
+            addSuggestionResult(
+                data.suggestions,
+                "home_remedy"
+            );
+
+        } else {
+
+            addSuggestionResult(
+                data.suggestions,
+                null
+            );
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Yoga error:",
+            error
+        );
+
+        button.disabled = false;
+
+        button.innerHTML =
+            "🧘 Try Yoga Suggestions Again";
+    }
+}
+
+
+// ============================================================
+// LOAD HISTORY
+// ============================================================
+
+async function loadHistory() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/history"
+            );
 
         if (!response.ok) {
             return;
@@ -344,9 +906,11 @@ async function loadHistory() {
         const conversations =
             await response.json();
 
-        historyList.innerHTML = "";
+        historyList.innerHTML =
+            "";
 
         if (!conversations.length) {
+
             historyList.innerHTML = `
                 <div class="history-empty">
                     No conversations yet
@@ -360,7 +924,9 @@ async function loadHistory() {
             function (conversation) {
 
                 const item =
-                    document.createElement("div");
+                    document.createElement(
+                        "div"
+                    );
 
                 item.className =
                     "history-item";
@@ -369,29 +935,36 @@ async function loadHistory() {
                     conversation.id ===
                     currentConversationId
                 ) {
-                    item.classList.add("active");
+                    item.classList.add(
+                        "active"
+                    );
                 }
 
                 const openButton =
-                    document.createElement("button");
+                    document.createElement(
+                        "button"
+                    );
 
                 openButton.className =
                     "history-open";
 
-                openButton.type = "button";
-
+                openButton.type =
+                    "button";
 
 
                 const icon =
-                    document.createElement("span");
+                    document.createElement(
+                        "span"
+                    );
 
                 icon.className =
                     "history-icon";
 
 
-
                 const title =
-                    document.createElement("span");
+                    document.createElement(
+                        "span"
+                    );
 
                 title.className =
                     "history-title";
@@ -399,31 +972,43 @@ async function loadHistory() {
                 title.textContent =
                     conversation.title;
 
-                openButton.appendChild(icon);
+                openButton.appendChild(
+                    icon
+                );
 
-                openButton.appendChild(title);
+                openButton.appendChild(
+                    title
+                );
+
 
                 const deleteButton =
-                    document.createElement("button");
+                    document.createElement(
+                        "button"
+                    );
 
                 deleteButton.className =
                     "history-delete";
 
-                deleteButton.type = "button";
+                deleteButton.type =
+                    "button";
 
                 deleteButton.title =
                     "Delete conversation";
 
-                deleteButton.textContent = "×";
+                deleteButton.textContent =
+                    "×";
+
 
                 openButton.addEventListener(
                     "click",
                     function () {
+
                         openConversation(
                             conversation.id
                         );
                     }
                 );
+
 
                 deleteButton.addEventListener(
                     "click",
@@ -437,15 +1022,23 @@ async function loadHistory() {
                     }
                 );
 
-                item.appendChild(openButton);
 
-                item.appendChild(deleteButton);
+                item.appendChild(
+                    openButton
+                );
 
-                historyList.appendChild(item);
+                item.appendChild(
+                    deleteButton
+                );
+
+                historyList.appendChild(
+                    item
+                );
             }
         );
 
     } catch (error) {
+
         console.error(
             "History error:",
             error
@@ -453,10 +1046,188 @@ async function loadHistory() {
     }
 }
 
+
+// ============================================================
+// ADD SUGGESTION RESULT
+// ============================================================
+
+function addSuggestionResult(
+    content,
+    nextSuggestion = null
+) {
+
+    const row =
+        document.createElement("div");
+
+    row.className =
+        "message-row assistant";
+
+
+    // ========================================================
+    // AVATAR
+    // ========================================================
+
+    const avatar =
+        document.createElement("div");
+
+    avatar.className =
+        "message-avatar";
+
+    avatar.textContent =
+        "🩺";
+
+
+    // ========================================================
+    // WRAPPER
+    // ========================================================
+
+    const wrapper =
+        document.createElement("div");
+
+    wrapper.className =
+        "message-content";
+
+
+    // ========================================================
+    // RESPONSE
+    // ========================================================
+
+    const bubble =
+        document.createElement("div");
+
+    bubble.className =
+        "message-bubble";
+
+    bubble.textContent =
+        content;
+
+    wrapper.appendChild(
+        bubble
+    );
+
+
+    // ========================================================
+    // NEXT SUGGESTION
+    // ========================================================
+
+    if (
+        nextSuggestion === "yoga"
+        ||
+        nextSuggestion === "home_remedy"
+    ) {
+
+        const suggestionContainer =
+            document.createElement("div");
+
+        suggestionContainer.className =
+            "suggestion-buttons";
+
+
+        const nextButton =
+            document.createElement("button");
+
+        nextButton.type =
+            "button";
+
+        nextButton.className =
+            "suggestion-button";
+
+
+        // ====================================================
+        // HOME → YOGA
+        // ====================================================
+
+        if (
+            nextSuggestion === "yoga"
+        ) {
+
+            nextButton.textContent =
+                "🧘 Suggestion for Yoga";
+
+            nextButton.addEventListener(
+                "click",
+                function () {
+
+                    // IMPORTANT:
+                    // true = this is the SECOND suggestion
+                    getYogaSuggestions(
+                        nextButton,
+                        suggestionContainer,
+                        true
+                    );
+
+                }
+            );
+        }
+
+
+        // ====================================================
+        // YOGA → HOME
+        // ====================================================
+
+        else if (
+            nextSuggestion === "home_remedy"
+        ) {
+
+            nextButton.textContent =
+                "🌿 Suggestion for Home Remedies";
+
+            nextButton.addEventListener(
+                "click",
+                function () {
+
+                    // IMPORTANT:
+                    // true = this is the SECOND suggestion
+                    getHomeRemedySuggestions(
+                        nextButton,
+                        suggestionContainer,
+                        true
+                    );
+
+                }
+            );
+        }
+
+
+        suggestionContainer.appendChild(
+            nextButton
+        );
+
+        wrapper.appendChild(
+            suggestionContainer
+        );
+    }
+
+
+    // ========================================================
+    // MESSAGE POSITION
+    // ========================================================
+
+    row.appendChild(
+        avatar
+    );
+
+    row.appendChild(
+        wrapper
+    );
+
+    chatContainer.appendChild(
+        row
+    );
+
+    scrollToBottom();
+}
+
+// ============================================================
+// OPEN CONVERSATION
+// ============================================================
+
 async function openConversation(
     conversationId
 ) {
+
     try {
+
         const response =
             await fetch(
                 `/conversation/${conversationId}`
@@ -466,6 +1237,7 @@ async function openConversation(
             await response.json();
 
         if (!response.ok) {
+
             alert(
                 data.error ||
                 "Unable to open conversation."
@@ -482,12 +1254,14 @@ async function openConversation(
             currentConversationId
         );
 
-        chatContainer.innerHTML = "";
+        chatContainer.innerHTML =
+            "";
 
         data.messages.forEach(
             function (message) {
 
                 addMessage(
+
                     message.content,
 
                     message.role === "user"
@@ -506,6 +1280,7 @@ async function openConversation(
         scrollToBottom();
 
     } catch (error) {
+
         console.error(
             "Conversation error:",
             error
@@ -513,9 +1288,15 @@ async function openConversation(
     }
 }
 
+
+// ============================================================
+// DELETE CONVERSATION
+// ============================================================
+
 async function deleteConversation(
     conversationId
 ) {
+
     const confirmed =
         window.confirm(
             "Delete this conversation?"
@@ -526,6 +1307,7 @@ async function deleteConversation(
     }
 
     try {
+
         const response =
             await fetch(
                 `/conversation/${conversationId}`,
@@ -538,6 +1320,7 @@ async function deleteConversation(
             await response.json();
 
         if (!response.ok) {
+
             alert(
                 data.error ||
                 "Unable to delete conversation."
@@ -550,6 +1333,7 @@ async function deleteConversation(
             currentConversationId ===
             conversationId
         ) {
+
             currentConversationId =
                 null;
 
@@ -559,6 +1343,7 @@ async function deleteConversation(
         await loadHistory();
 
     } catch (error) {
+
         console.error(
             "Delete error:",
             error
@@ -566,17 +1351,31 @@ async function deleteConversation(
     }
 }
 
+
+// ============================================================
+// HIGHLIGHT CURRENT CONVERSATION
+// ============================================================
+
 function highlightCurrentConversation() {
+
     document
-        .querySelectorAll(".history-item")
+        .querySelectorAll(
+            ".history-item"
+        )
         .forEach(
             function (item) {
-                item.classList.remove("active");
+
+                item.classList.remove(
+                    "active"
+                );
             }
         );
 
+
     document
-        .querySelectorAll(".history-open")
+        .querySelectorAll(
+            ".history-open"
+        )
         .forEach(
             function (button) {
 
@@ -591,13 +1390,23 @@ function highlightCurrentConversation() {
 
                 if (
                     button.dataset.id ===
-                    String(currentConversationId)
+                    String(
+                        currentConversationId
+                    )
                 ) {
-                    item.classList.add("active");
+
+                    item.classList.add(
+                        "active"
+                    );
                 }
             }
         );
 }
+
+
+// ============================================================
+// CLEAR BUTTON
+// ============================================================
 
 clearButton.addEventListener(
     "click",
@@ -613,10 +1422,15 @@ clearButton.addEventListener(
         clearChatUI();
 
         document
-            .querySelectorAll(".history-item")
+            .querySelectorAll(
+                ".history-item"
+            )
             .forEach(
                 function (item) {
-                    item.classList.remove("active");
+
+                    item.classList.remove(
+                        "active"
+                    );
                 }
             );
 
@@ -624,10 +1438,20 @@ clearButton.addEventListener(
     }
 );
 
+
+// ============================================================
+// SEND BUTTON
+// ============================================================
+
 sendButton.addEventListener(
     "click",
     sendMessage
 );
+
+
+// ============================================================
+// ENTER TO SEND
+// ============================================================
 
 messageInput.addEventListener(
     "keydown",
@@ -645,11 +1469,17 @@ messageInput.addEventListener(
     }
 );
 
+
+// ============================================================
+// AUTO RESIZE TEXTAREA
+// ============================================================
+
 messageInput.addEventListener(
     "input",
     function () {
 
-        this.style.height = "auto";
+        this.style.height =
+            "auto";
 
         this.style.height =
             Math.min(
@@ -658,6 +1488,11 @@ messageInput.addEventListener(
             ) + "px";
     }
 );
+
+
+// ============================================================
+// INITIALIZE APP
+// ============================================================
 
 async function initializeApp() {
 

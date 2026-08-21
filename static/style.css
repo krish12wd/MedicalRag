@@ -805,7 +805,7 @@ body {
    This is the main Chat History box.
 
    It uses the SAME visual style as the
-   GPT-OSS 120B model card.
+   GPT-OSS 20B model card.
 */
 
 .history-list {
@@ -1281,10 +1281,6 @@ body {
 }
 
 
-/* =========================================================
-   CHAT CONTAINER
-   ========================================================= */
-
 .chat-container {
     flex: 1 1 auto;
 
@@ -1556,7 +1552,7 @@ body {
 
     overflow-wrap: anywhere;
 
-    white-space: pre-wrap;
+    white-space: pre-line;
 }
 
 
@@ -1606,6 +1602,73 @@ body {
     box-shadow:
         0 4px 14px
         rgba(30, 40, 70, 0.045);
+}
+
+.yoga-message {
+    width: min(680px, 100%);
+}
+
+.yoga-message > strong {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 16px;
+}
+
+.yoga-message > p {
+    margin-bottom: 14px;
+    color: var(--text-secondary);
+}
+
+.yoga-pose-list {
+    display: grid;
+    gap: 12px;
+}
+
+.yoga-pose-card {
+    display: grid;
+    grid-template-columns: 116px minmax(0, 1fr);
+    gap: 12px;
+    padding: 10px;
+    border: 1px solid #e3e7ef;
+    border-radius: 10px;
+    background: #fbfcfe;
+}
+
+.yoga-pose-image {
+    width: 116px;
+    height: 116px;
+    object-fit: cover;
+    border-radius: 8px;
+    background: #edf2f7;
+}
+
+.yoga-pose-details h3 {
+    margin-bottom: 4px;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.35;
+}
+
+.yoga-pose-details p {
+    margin-bottom: 5px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.yoga-pose-details .yoga-pose-instructions {
+    color: var(--text);
+}
+
+.yoga-pose-details a {
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.yoga-pose-details a:hover {
+    text-decoration: underline;
 }
 
 
@@ -1697,9 +1760,8 @@ body {
 /* =========================================================
    MESSAGE MARKDOWN
    ========================================================= */
-
 .message-bubble p {
-    margin: 0 0 8px;
+    margin: 0 0 4px;
 }
 
 .message-bubble p:last-child {
@@ -1716,13 +1778,31 @@ body {
     color: white;
 }
 
+
+/* =========================================================
+   COMPACT BULLET POINTS
+   ========================================================= */
+
 .message-bubble ul,
 .message-bubble ol {
-    margin: 7px 0 7px 20px;
+    margin: 3px 0 3px 20px;
+    padding-left: 0;
 }
 
 .message-bubble li {
-    margin-bottom: 4px;
+    margin-bottom: 2px;
+    padding-left: 1px;
+}
+
+.message-bubble li:last-child {
+    margin-bottom: 0;
+}
+
+
+/* Preserve plain-text bullet line breaks */
+
+.message-row.assistant .message-bubble {
+    white-space: pre-line;
 }
 
 
@@ -2092,4 +2172,71 @@ body {
         height: 29px;
         font-size: 13px;
     }
+}
+/* =========================================================
+   SUGGESTION BUTTONS
+   ========================================================= */
+
+.suggestion-buttons {
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 8px;
+
+    margin-top: 10px;
+}
+
+
+.suggestion-button {
+
+    padding: 8px 12px;
+
+    border: 1px solid #dce3f2;
+
+    border-radius: 10px;
+
+    background: #f8faff;
+
+    color: #315fdc;
+
+    font-family: inherit;
+
+    font-size: 10px;
+
+    font-weight: 650;
+
+    cursor: pointer;
+
+    transition:
+        background 0.2s ease,
+        border-color 0.2s ease,
+        transform 0.2s ease;
+}
+
+
+.suggestion-button:hover {
+
+    background: #eef3ff;
+
+    border-color: #bfcdf3;
+
+    transform: translateY(-1px);
+}
+
+
+.suggestion-button:active {
+
+    transform: translateY(0);
+}
+
+
+.suggestion-button:disabled {
+
+    opacity: 0.65;
+
+    cursor: wait;
+
+    transform: none;
 }

@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import sqlite3
 import uuid
 
@@ -23,13 +24,26 @@ from werkzeug.security import (
     check_password_hash,
 )
 
-from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 
-from agent import agent
+from agent import (
+    agent,
+    home_remedy_node,
+    yoga_node,
+    answer_node,
+)
 
+
+# ============================================================
+# ENVIRONMENT
+# ============================================================
 
 load_dotenv()
 
+
+# ============================================================
+# LOGGING
+# ============================================================
 
 logging.disable(logging.INFO)
 
@@ -38,6 +52,10 @@ logging.getLogger("httpcore").disabled = True
 logging.getLogger("groq").disabled = True
 
 
+# ============================================================
+# FLASK
+# ============================================================
+
 app = Flask(__name__)
 
 app.secret_key = os.getenv(
@@ -45,15 +63,30 @@ app.secret_key = os.getenv(
     "medical-rag-development-secret-key",
 )
 
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
 DATABASE = "app.db"
 
-GROQ_API_KEY = os.getenv(
-    "GROQ_API_KEY"
+QWEN_API_KEY = os.getenv(
+    "QWEN_API_KEY"
 )
 
-if not GROQ_API_KEY:
+QWEN_BASE_URL = os.getenv(
+    "QWEN_BASE_URL",
+    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+)
+
+QWEN_MODEL = os.getenv(
+    "QWEN_MODEL",
+    "qwen-plus",
+)
+
+if not QWEN_API_KEY:
     raise ValueError(
-        "GROQ_API_KEY is not set in .env"
+        "QWEN_API_KEY is not set in .env"
     )
 
 
@@ -61,10 +94,11 @@ if not GROQ_API_KEY:
 # TITLE GENERATION LLM
 # ============================================================
 
-title_llm = ChatGroq(
-    model="openai/gpt-oss-120b",
+title_llm = ChatOpenAI(
+    model=QWEN_MODEL,
     temperature=0,
-    api_key=GROQ_API_KEY,
+    api_key=QWEN_API_KEY,
+    base_url=QWEN_BASE_URL,
 )
 
 
@@ -87,7 +121,8 @@ Rules:
 - Do not include unnecessary patient details.
 - Do not answer the question.
 - Do not use quotation marks.
-- Do not use words like Chat, Conversation, Question, Medical, or Assistant.
+- Do not use words like Chat, Conversation, Question,
+  Medical, or Assistant.
 
 Examples:
 
@@ -155,7 +190,6 @@ def generate_chat_title(question):
             return "New Conversation"
 
         if len(words) > 5:
-
             title = " ".join(
                 words[:5]
             )
@@ -190,6 +224,81 @@ def get_db():
 
     return connection
 
+
+# ============================================================
+# SAVE ASSISTANT MESSAGE
+# ============================================================
+
+def save_suggestion_message(
+    connection,
+    conversation_id,
+    content,
+):
+
+    if content.startswith(
+        "The AI model has reached its daily token limit."
+    ):
+
+        previous = connection.execute(
+            """
+            SELECT content
+            FROM messages
+            WHERE conversation_id = ?
+            AND role = 'assistant'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (
+                conversation_id,
+            ),
+        ).fetchone()
+
+        if (
+            previous
+            and previous["content"].startswith(
+                "The AI model has reached its daily token limit."
+            )
+        ):
+            return
+
+    now = datetime.now().isoformat()
+
+    connection.execute(
+        """
+        INSERT INTO messages (
+            conversation_id,
+            role,
+            content,
+            created_at
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            conversation_id,
+            "assistant",
+            content,
+            now,
+        ),
+    )
+
+    connection.execute(
+        """
+        UPDATE conversations
+        SET updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            now,
+            conversation_id,
+        ),
+    )
+
+    connection.commit()
+
+
+# ============================================================
+# INITIALIZE DATABASE
+# ============================================================
 
 def init_db():
 
@@ -276,7 +385,6 @@ def login_required(function):
 def current_user():
 
     if "user_id" not in session:
-
         return None
 
     connection = get_db()
@@ -295,6 +403,174 @@ def current_user():
     connection.close()
 
     return user
+
+
+# ============================================================
+# CLEAN PATIENT RESPONSE
+# ============================================================
+
+def clean_patient_response(answer):
+
+    if not answer:
+        return ""
+
+    answer = str(answer).replace("\r\n", "\n")
+    answer = answer.replace("\r", "\n")
+
+    answer = answer.replace(
+        "[CLARIFICATION]",
+        ""
+    )
+
+    answer = answer.replace(
+        "[FINAL]",
+        ""
+    )
+
+    answer = re.sub(
+        r"```(?:text|markdown)?",
+        "",
+        answer,
+        flags=re.IGNORECASE,
+    )
+
+    answer = answer.replace(
+        "≈",
+        " approximately "
+    )
+
+    answer = answer.replace(
+        "~",
+        " approximately "
+    )
+
+    answer = re.sub(
+        r"(\d)\s*[–—-]\s*(\d)",
+        r"\1 to \2",
+        answer,
+    )
+
+    answer = answer.replace(
+        "**",
+        "",
+    )
+
+    answer = re.sub(
+        r"(?im)^\s*(answer:|treatment:|treatment / management:|important points:)\s*$",
+        "",
+        answer,
+    )
+
+    answer = re.sub(
+        r"(?m)^\s*[-*]\s+",
+        "• ",
+        answer,
+    )
+
+    answer = re.sub(
+        r"(?m)^\s*•\s*",
+        "• ",
+        answer,
+    )
+
+    answer = re.sub(
+        r"\n\s*\n+",
+        "\n",
+        answer,
+    )
+
+    lines = []
+
+    for line in answer.split("\n"):
+
+        line = line.strip()
+
+        if not line:
+            continue
+
+        if line.startswith("•"):
+            bullet_text = line[1:].strip()
+
+            if bullet_text:
+                lines.append(
+                    "• " + bullet_text
+                )
+
+        else:
+            lines.append(line)
+
+    return "\n".join(lines).strip()
+
+
+# ============================================================
+# EXTRACT ANSWER FROM AGENT STATE
+# ============================================================
+
+def extract_agent_answer(result):
+
+    if not isinstance(result, dict):
+
+        raise RuntimeError(
+            "Agent returned an invalid state."
+        )
+
+    answer = result.get(
+        "final_answer"
+    )
+
+    if answer:
+        return clean_patient_response(
+            answer
+        )
+
+    answer = result.get(
+        "consultation_response"
+    )
+
+    if answer:
+        return clean_patient_response(
+            answer
+        )
+
+    messages = result.get(
+        "messages",
+        []
+    )
+
+    if messages:
+
+        last_message = messages[-1]
+
+        if hasattr(
+            last_message,
+            "content"
+        ):
+
+            answer = last_message.content
+
+        elif isinstance(
+            last_message,
+            dict
+        ):
+
+            answer = last_message.get(
+                "content",
+                ""
+            )
+
+        else:
+
+            answer = ""
+
+        if answer:
+
+            return clean_patient_response(
+                answer
+            )
+
+    raise RuntimeError(
+        "Agent returned no usable answer."
+    )
 
 
 # ============================================================
@@ -556,7 +832,7 @@ def chat():
 
         return jsonify({
             "error":
-            "Invalid request data."
+                "Invalid request data."
         }), 400
 
     question = (
@@ -575,7 +851,7 @@ def chat():
 
         return jsonify({
             "error":
-            "Please enter a question."
+                "Please enter a question."
         }), 400
 
     user_id = session["user_id"]
@@ -607,7 +883,7 @@ def chat():
 
                 return jsonify({
                     "error":
-                    "Conversation not found."
+                        "Conversation not found."
                 }), 404
 
         else:
@@ -657,11 +933,7 @@ def chat():
         ).fetchall()
 
         # ====================================================
-        # ONLY CHANGE:
-        # GENERATE AI TITLE WHEN THIS IS THE FIRST MESSAGE
-        #
-        # This works even when frontend sends a
-        # conversation_id for a newly created conversation.
+        # GENERATE TITLE FOR FIRST MESSAGE
         # ====================================================
 
         if len(rows) == 0:
@@ -687,7 +959,7 @@ def chat():
             connection.commit()
 
         # ====================================================
-        # BUILD CONVERSATION MESSAGES
+        # BUILD CONVERSATION HISTORY
         # ====================================================
 
         conversation_messages = []
@@ -695,31 +967,20 @@ def chat():
         for row in rows:
 
             conversation_messages.append({
-                "role": row["role"],
-                "content": row["content"],
+                "role":
+                    row["role"],
+
+                "content":
+                    row["content"],
             })
 
         conversation_messages.append({
-            "role": "user",
-            "content": question,
+            "role":
+                "user",
+
+            "content":
+                question,
         })
-
-        # ====================================================
-        # CALL AGENT
-        # ====================================================
-
-        result = agent.invoke(
-            {
-                "messages":
-                conversation_messages
-            }
-        )
-
-        final_message = result[
-            "messages"
-        ][-1]
-
-        answer = final_message.content
 
         # ====================================================
         # SAVE USER MESSAGE
@@ -745,9 +1006,110 @@ def chat():
             ),
         )
 
+        connection.commit()
+
         # ====================================================
-        # SAVE ASSISTANT MESSAGE
+        # RUN AGENT
         # ====================================================
+
+        result = agent.invoke(
+            {
+                "messages":
+                    conversation_messages
+            }
+        )
+
+        # ====================================================
+        # EXTRACT PATIENT-FRIENDLY ANSWER
+        # ====================================================
+
+        answer = extract_agent_answer(
+            result
+        )
+
+        # ====================================================
+        # READ AGENT STATE
+        # ====================================================
+
+        enough_information = bool(
+            result.get(
+                "enough_information",
+                False,
+            )
+        )
+
+        intent = (
+            result.get(
+                "intent",
+                ""
+            )
+            or ""
+        )
+
+        # ====================================================
+        # RESPONSE SOURCE
+        #
+        # IMPORTANT:
+        # This is a separate API field only.
+        # It is NOT added to "answer".
+        #
+        # Therefore the existing UI can continue to
+        # display only the answer text.
+        # ====================================================
+
+        retrieval_source = (
+            result.get(
+                "retrieval_source",
+                "NONE"
+            )
+            or "NONE"
+        )
+
+        if retrieval_source == "PDF":
+
+            response_source = (
+                "RAG / STANDARD TREATMENT GUIDELINES"
+            )
+
+        elif retrieval_source == "WEB":
+
+            response_source = (
+                "WEB SEARCH / AGENT"
+            )
+
+        else:
+
+            response_source = (
+                "AGENT / CONSULTATION"
+            )
+
+        # ====================================================
+        # SUGGESTIONS
+        # ====================================================
+
+        show_suggestions = (
+            enough_information
+        )
+
+        print(
+            "AGENT STATE:",
+            {
+                "enough_information":
+                    enough_information,
+
+                "intent":
+                    intent,
+
+                "answer":
+                    answer,
+            }
+        )
+
+        # ====================================================
+        # SAVE ASSISTANT ANSWER
+        # ====================================================
+
+        now = datetime.now().isoformat()
 
         connection.execute(
             """
@@ -768,7 +1130,7 @@ def chat():
         )
 
         # ====================================================
-        # UPDATE CONVERSATION TIME
+        # UPDATE CONVERSATION
         # ====================================================
 
         connection.execute(
@@ -786,7 +1148,7 @@ def chat():
         connection.commit()
 
         # ====================================================
-        # GET FINAL TITLE
+        # GET TITLE
         # ====================================================
 
         conversation_row = connection.execute(
@@ -800,20 +1162,106 @@ def chat():
             ),
         ).fetchone()
 
+        # ====================================================
+        # RETURN TO FRONTEND
+        # ====================================================
+
         return jsonify({
-            "answer": answer,
+            "answer":
+                answer,
+
             "conversation_id":
                 conversation_id,
+
             "title":
                 conversation_row["title"],
+
+            "show_suggestions":
+                show_suggestions,
+
+            "intent":
+                intent,
+
+            # Separate field.
+            # Frontend does not need to display it.
+            "source":
+                response_source,
         })
 
     except Exception as e:
 
         connection.rollback()
 
+        error_text = str(e)
+
+        print(
+            "CHAT ERROR:",
+            repr(e)
+        )
+
+        if (
+            "rate_limit_exceeded"
+            in error_text.lower()
+            or
+            "error code: 429"
+            in error_text.lower()
+            or
+            "429"
+            in error_text
+        ):
+
+            wait_match = re.search(
+                r"try again in\s+"
+                r"([0-9]+h)?\s*"
+                r"([0-9]+m)?\s*"
+                r"([0-9]+(?:\.[0-9]+)?s)?",
+                error_text,
+                flags=re.IGNORECASE,
+            )
+
+            wait_time = (
+                wait_match
+                .group(0)
+                .replace(
+                    "try again in",
+                    "",
+                )
+                .strip()
+                if wait_match
+                else "a few minutes"
+            )
+
+            error_message = (
+                "The AI model has reached its daily token limit. "
+                f"It should reset in approximately {wait_time}. "
+                "Please try again after that."
+            )
+
+            save_suggestion_message(
+                connection,
+                conversation_id,
+                error_message,
+            )
+
+            return jsonify({
+                "error":
+                    error_message
+            }), 429
+
+        error_message = (
+            "I could not complete that response right now. "
+            "Please try again in a moment."
+        )
+
+        save_suggestion_message(
+            connection,
+            conversation_id,
+            error_message,
+        )
+
         return jsonify({
-            "error": str(e)
+            "error":
+                error_message
         }), 500
 
     finally:
@@ -869,7 +1317,9 @@ def history():
                 conversation["updated_at"],
         })
 
-    return jsonify(result)
+    return jsonify(
+        result
+    )
 
 
 # ============================================================
@@ -907,7 +1357,7 @@ def get_conversation(
 
         return jsonify({
             "error":
-            "Conversation not found."
+                "Conversation not found."
         }), 404
 
     messages = connection.execute(
@@ -987,7 +1437,7 @@ def delete_conversation(
 
         return jsonify({
             "error":
-            "Conversation not found."
+                "Conversation not found."
         }), 404
 
     connection.execute(
@@ -1015,7 +1465,8 @@ def delete_conversation(
     connection.close()
 
     return jsonify({
-        "success": True
+        "success":
+            True
     })
 
 
@@ -1031,8 +1482,315 @@ def delete_conversation(
 def clear():
 
     return jsonify({
-        "success": True
+        "success":
+            True
     })
+
+
+# ============================================================
+# HOME REMEDY SUGGESTIONS
+# ============================================================
+
+@app.route(
+    "/suggestions/home-remedies",
+    methods=["POST"]
+)
+@login_required
+def home_remedy_suggestions():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Invalid request data."
+        }), 400
+
+    conversation_id = data.get(
+        "conversation_id"
+    )
+
+    if not conversation_id:
+
+        return jsonify({
+            "error":
+                "Conversation ID is required."
+        }), 400
+
+    user_id = session["user_id"]
+
+    connection = get_db()
+
+    try:
+
+        conversation = connection.execute(
+            """
+            SELECT id
+            FROM conversations
+            WHERE id = ?
+            AND user_id = ?
+            """,
+            (
+                conversation_id,
+                user_id,
+            ),
+        ).fetchone()
+
+        if not conversation:
+
+            return jsonify({
+                "error":
+                    "Conversation not found."
+            }), 404
+
+        rows = connection.execute(
+            """
+            SELECT role, content
+            FROM messages
+            WHERE conversation_id = ?
+            ORDER BY id ASC
+            """,
+            (
+                conversation_id,
+            ),
+        ).fetchall()
+
+        if not rows:
+
+            return jsonify({
+                "error":
+                    "No conversation context found."
+            }), 400
+
+        conversation_messages = []
+
+        for row in rows:
+
+            conversation_messages.append({
+                "role":
+                    row["role"],
+
+                "content":
+                    row["content"],
+            })
+
+        state = {
+            "messages":
+                conversation_messages,
+
+            "enough_information":
+                True,
+
+            "intent":
+                "home_remedy",
+
+            "retrieved_information":
+                "",
+        }
+
+        state = home_remedy_node(
+            state
+        )
+
+        state = answer_node(
+            state
+        )
+
+        answer = extract_agent_answer(
+            state
+        )
+
+        save_suggestion_message(
+            connection,
+            conversation_id,
+            answer,
+        )
+
+        return jsonify({
+            "success":
+                True,
+
+            "suggestions":
+                answer,
+
+            "next":
+                "yoga",
+
+            "source":
+                "WEB SEARCH / AGENT",
+        })
+
+    except Exception as error:
+
+        print(
+            "HOME REMEDY SUGGESTION ERROR:",
+            repr(error)
+        )
+
+        return jsonify({
+            "error":
+                "Unable to get home remedy suggestions."
+        }), 500
+
+    finally:
+
+        connection.close()
+
+
+# ============================================================
+# YOGA SUGGESTIONS
+# ============================================================
+
+@app.route(
+    "/suggestions/yoga",
+    methods=["POST"]
+)
+@login_required
+def yoga_suggestions():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Invalid request data."
+        }), 400
+
+    conversation_id = data.get(
+        "conversation_id"
+    )
+
+    if not conversation_id:
+
+        return jsonify({
+            "error":
+                "Conversation ID is required."
+        }), 400
+
+    user_id = session["user_id"]
+
+    connection = get_db()
+
+    try:
+
+        conversation = connection.execute(
+            """
+            SELECT id
+            FROM conversations
+            WHERE id = ?
+            AND user_id = ?
+            """,
+            (
+                conversation_id,
+                user_id,
+            ),
+        ).fetchone()
+
+        if not conversation:
+
+            return jsonify({
+                "error":
+                    "Conversation not found."
+            }), 404
+
+        rows = connection.execute(
+            """
+            SELECT role, content
+            FROM messages
+            WHERE conversation_id = ?
+            ORDER BY id ASC
+            """,
+            (
+                conversation_id,
+            ),
+        ).fetchall()
+
+        if not rows:
+
+            return jsonify({
+                "error":
+                    "No conversation context found."
+            }), 400
+
+        conversation_messages = []
+
+        for row in rows:
+
+            conversation_messages.append({
+                "role":
+                    row["role"],
+
+                "content":
+                    row["content"],
+            })
+
+        state = {
+            "messages":
+                conversation_messages,
+
+            "enough_information":
+                True,
+
+            "intent":
+                "yoga",
+
+            "retrieved_information":
+                "",
+        }
+
+        state = yoga_node(
+            state
+        )
+
+        state = answer_node(
+            state
+        )
+
+        answer = extract_agent_answer(
+            state
+        )
+
+        save_suggestion_message(
+            connection,
+            conversation_id,
+            answer,
+        )
+
+        return jsonify({
+            "success":
+                True,
+
+            "suggestions":
+                answer,
+
+            "next":
+                "home_remedy",
+
+            "source":
+                "WEB SEARCH / AGENT",
+        })
+
+    except Exception as error:
+
+        print(
+            "YOGA SUGGESTION ERROR:",
+            repr(error)
+        )
+
+        return jsonify({
+            "error":
+                "Unable to get yoga suggestions."
+        }), 500
+
+    finally:
+
+        connection.close()
 
 
 # ============================================================
@@ -1043,7 +1801,7 @@ init_db()
 
 
 # ============================================================
-# RUN APPLICATION
+# RUN
 # ============================================================
 
 if __name__ == "__main__":

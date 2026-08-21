@@ -12,3 +12,5 @@ flashrank
 python-dotenv
 gunicorn
 flask
+langchain-openai
+ddgs
