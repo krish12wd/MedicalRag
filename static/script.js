@@ -241,91 +241,91 @@ function addMessage(
     // ========================================================
 
     // ========================================================
-// HOME REMEDY + YOGA BUTTONS
-// ========================================================
+    // HOME REMEDY + YOGA BUTTONS
+    // ========================================================
 
-if (
-    type === "assistant" &&
-    showSuggestionButtons &&
-    currentConversationId
-) {
+    if (
+        type === "assistant" &&
+        showSuggestionButtons &&
+        currentConversationId
+    ) {
 
-    const suggestionContainer =
-        document.createElement("div");
+        const suggestionContainer =
+            document.createElement("div");
 
-    suggestionContainer.className =
-        "suggestion-buttons";
+        suggestionContainer.className =
+            "suggestion-buttons";
 
-    // ----------------------------------------------------
-    // HOME REMEDIES
-    // ----------------------------------------------------
+        // ----------------------------------------------------
+        // HOME REMEDIES
+        // ----------------------------------------------------
 
-    const homeRemedyButton =
-        document.createElement("button");
+        const homeRemedyButton =
+            document.createElement("button");
 
-    homeRemedyButton.type =
-        "button";
+        homeRemedyButton.type =
+            "button";
 
-    homeRemedyButton.className =
-        "suggestion-button";
+        homeRemedyButton.className =
+            "suggestion-button";
 
-    homeRemedyButton.textContent =
-        "🌿 Suggestion for Home Remedies";
+        homeRemedyButton.textContent =
+            "🌿 Suggestion for Home Remedies";
 
-    homeRemedyButton.addEventListener(
-        "click",
-        function () {
+        homeRemedyButton.addEventListener(
+            "click",
+            function () {
 
-            getHomeRemedySuggestions(
-                homeRemedyButton,
-                suggestionContainer
-            );
+                getHomeRemedySuggestions(
+                    homeRemedyButton,
+                    suggestionContainer
+                );
 
-        }
-    );
+            }
+        );
 
-    suggestionContainer.appendChild(
-        homeRemedyButton
-    );
-
-
-    // ----------------------------------------------------
-    // YOGA
-    // ----------------------------------------------------
-
-    const yogaButton =
-        document.createElement("button");
-
-    yogaButton.type =
-        "button";
-
-    yogaButton.className =
-        "suggestion-button";
-
-    yogaButton.textContent =
-        "🧘 Suggestion for Yoga";
-
-    yogaButton.addEventListener(
-        "click",
-        function () {
-
-            getYogaSuggestions(
-                yogaButton,
-                suggestionContainer
-            );
-
-        }
-    );
-
-    suggestionContainer.appendChild(
-        yogaButton
-    );
+        suggestionContainer.appendChild(
+            homeRemedyButton
+        );
 
 
-    wrapper.appendChild(
-        suggestionContainer
-    );
-}
+        // ----------------------------------------------------
+        // YOGA
+        // ----------------------------------------------------
+
+        const yogaButton =
+            document.createElement("button");
+
+        yogaButton.type =
+            "button";
+
+        yogaButton.className =
+            "suggestion-button";
+
+        yogaButton.textContent =
+            "🧘 Suggestion for Yoga";
+
+        yogaButton.addEventListener(
+            "click",
+            function () {
+
+                getYogaSuggestions(
+                    yogaButton,
+                    suggestionContainer
+                );
+
+            }
+        );
+
+        suggestionContainer.appendChild(
+            yogaButton
+        );
+
+
+        wrapper.appendChild(
+            suggestionContainer
+        );
+    }
 
 
     // ========================================================
@@ -951,6 +951,9 @@ async function loadHistory() {
                 openButton.type =
                     "button";
 
+                openButton.dataset.id =
+                    conversation.id;
+
 
                 const icon =
                     document.createElement(
@@ -1510,5 +1513,510 @@ async function initializeApp() {
         );
     }
 }
+
+
+
+// ============================================================
+// BLOOD REPORT PDF UPLOAD
+// DIGITAL PDF ONLY
+// ============================================================
+
+const uploadButton =
+    document.getElementById(
+        "uploadButton"
+    );
+
+const uploadMenu =
+    document.getElementById(
+        "uploadMenu"
+    );
+
+const uploadPdfButton =
+    document.getElementById(
+        "uploadPdfButton"
+    );
+
+const bloodReportPdfInput =
+    document.getElementById(
+        "bloodReportPdfInput"
+    );
+
+
+// ============================================================
+// OPEN / CLOSE MENU
+// ============================================================
+
+function toggleUploadMenu() {
+
+    if (!uploadMenu) {
+        return;
+    }
+
+    uploadMenu.classList.toggle(
+        "show"
+    );
+}
+
+
+function closeUploadMenu() {
+
+    if (!uploadMenu) {
+        return;
+    }
+
+    uploadMenu.classList.remove(
+        "show"
+    );
+}
+
+
+// ============================================================
+// PLUS BUTTON
+// ============================================================
+
+if (uploadButton) {
+
+    uploadButton.addEventListener(
+        "click",
+        function (event) {
+
+            event.stopPropagation();
+
+            toggleUploadMenu();
+
+        }
+    );
+}
+
+
+// ============================================================
+// PDF BUTTON
+// ============================================================
+
+if (uploadPdfButton) {
+
+    uploadPdfButton.addEventListener(
+        "click",
+        function () {
+
+            closeUploadMenu();
+
+            bloodReportPdfInput.click();
+
+        }
+    );
+}
+
+
+// ============================================================
+// CLOSE MENU WHEN CLICKING OUTSIDE
+// ============================================================
+
+document.addEventListener(
+    "click",
+    function (event) {
+
+        if (
+            uploadMenu &&
+            uploadButton &&
+            !uploadMenu.contains(
+                event.target
+            ) &&
+            !uploadButton.contains(
+                event.target
+            )
+        ) {
+
+            closeUploadMenu();
+
+        }
+
+    }
+);
+
+
+// ============================================================
+// PDF SELECTED
+// ============================================================
+
+if (bloodReportPdfInput) {
+
+    bloodReportPdfInput.addEventListener(
+        "change",
+        function () {
+
+            if (
+                bloodReportPdfInput.files &&
+                bloodReportPdfInput.files.length > 0
+            ) {
+
+                uploadBloodReport(
+                    bloodReportPdfInput.files[0]
+                );
+
+            }
+
+            bloodReportPdfInput.value =
+                "";
+
+        }
+    );
+}
+
+
+// ============================================================
+// ADD BLOOD REPORT RESULT
+// ============================================================
+
+function addBloodReportResult(content) {
+
+    if (!content) {
+
+        addMessage(
+            "The blood report was uploaded, but no analysis was returned.",
+            "assistant"
+        );
+
+        return;
+    }
+
+    const row =
+        document.createElement("div");
+
+    row.className =
+        "message-row assistant";
+
+
+    // ========================================================
+    // AVATAR
+    // ========================================================
+
+    const avatar =
+        document.createElement("div");
+
+    avatar.className =
+        "message-avatar";
+
+    avatar.textContent =
+        "🩺";
+
+
+    // ========================================================
+    // WRAPPER
+    // ========================================================
+
+    const wrapper =
+        document.createElement("div");
+
+    wrapper.className =
+        "message-content";
+
+
+    // ========================================================
+    // BLOOD REPORT RESULT
+    // ========================================================
+
+    const bubble =
+        document.createElement("div");
+
+    bubble.className =
+        "message-bubble blood-report-result";
+
+    bubble.textContent =
+        content;
+
+
+    wrapper.appendChild(
+        bubble
+    );
+
+
+    // ========================================================
+    // TIME
+    // ========================================================
+
+    const time =
+        document.createElement("div");
+
+    time.className =
+        "message-time";
+
+    time.textContent =
+        formatTime(
+            new Date().toISOString()
+        );
+
+    wrapper.appendChild(
+        time
+    );
+
+
+    // ========================================================
+    // MESSAGE POSITION
+    // ========================================================
+
+    row.appendChild(
+        avatar
+    );
+
+    row.appendChild(
+        wrapper
+    );
+
+    chatContainer.appendChild(
+        row
+    );
+
+
+    // ========================================================
+    // SCROLL
+    // ========================================================
+
+    scrollToBottom();
+}
+
+// ============================================================
+// UPLOAD BLOOD REPORT
+// ============================================================
+
+async function uploadBloodReport(
+    file
+) {
+
+    if (!file) {
+        return;
+    }
+
+
+    // ========================================================
+    // PDF ONLY
+    // ========================================================
+
+    const isPdf =
+        file.type === "application/pdf"
+        ||
+        file.name
+            .toLowerCase()
+            .endsWith(".pdf");
+
+
+    if (!isPdf) {
+
+        addMessage(
+            "Please upload a digital PDF blood report.",
+            "assistant"
+        );
+
+        return;
+    }
+
+
+    // ========================================================
+    // 15 MB LIMIT
+    // ========================================================
+
+    if (
+        file.size >
+        15 * 1024 * 1024
+    ) {
+
+        addMessage(
+            "The blood report PDF must be smaller than 15 MB.",
+            "assistant"
+        );
+
+        return;
+    }
+
+
+    // ========================================================
+    // SHOW USER UPLOAD
+    // ========================================================
+
+    addMessage(
+        "📎 Uploaded blood report: " +
+        file.name,
+        "user"
+    );
+
+
+    showTyping();
+
+
+    if (uploadButton) {
+
+        uploadButton.disabled =
+            true;
+
+    }
+
+    if (sendButton) {
+
+        sendButton.disabled =
+            true;
+
+    }
+
+
+    // ========================================================
+    // FORM DATA
+    // ========================================================
+
+    const formData =
+        new FormData();
+
+    formData.append(
+        "report",
+        file
+    );
+
+    if (currentConversationId) {
+
+        formData.append(
+            "conversation_id",
+            currentConversationId
+        );
+    }
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/analyze-report",
+                {
+                    method: "POST",
+                    body: formData,
+                    credentials: "same-origin"
+                }
+            );
+
+
+        // ====================================================
+        // READ RESPONSE SAFELY
+        // ====================================================
+
+        const contentType =
+            response.headers.get(
+                "content-type"
+            ) || "";
+
+
+        if (
+            !contentType.includes(
+                "application/json"
+            )
+        ) {
+
+            hideTyping();
+
+            addMessage(
+                "The server returned an unexpected response. Please refresh the page and try again.",
+                "assistant"
+            );
+
+            console.error(
+                "Unexpected server response:",
+                await response.text()
+            );
+
+            return;
+        }
+
+
+        const data =
+            await response.json();
+
+
+        hideTyping();
+
+
+        // ====================================================
+        // SERVER ERROR
+        // ====================================================
+
+        if (!response.ok) {
+
+            addMessage(
+                data.error ||
+                "Unable to analyze the blood report.",
+                "assistant"
+            );
+
+            return;
+        }
+
+
+        // ====================================================
+        // APPLICATION ERROR
+        // ====================================================
+
+        if (data.error) {
+
+            addMessage(
+                data.error,
+                "assistant"
+            );
+
+            return;
+        }
+
+
+        // ====================================================
+        // REPORT RESULT
+        // ====================================================
+
+        if (data.conversation_id) {
+
+            currentConversationId =
+                data.conversation_id;
+
+            localStorage.setItem(
+                "currentConversationId",
+                currentConversationId
+            );
+        }
+
+        addBloodReportResult(
+            data.analysis
+        );
+
+        await loadHistory();
+
+        highlightCurrentConversation();
+
+    } catch (error) {
+
+        hideTyping();
+
+        console.error(
+            "Blood report upload error:",
+            error
+        );
+
+        addMessage(
+            "Unable to connect to the server. Please try again.",
+            "assistant"
+        );
+
+    } finally {
+
+        if (uploadButton) {
+
+            uploadButton.disabled =
+                false;
+
+        }
+
+        if (sendButton) {
+
+            sendButton.disabled =
+                false;
+
+        }
+
+    }
+}
+
 
 initializeApp();

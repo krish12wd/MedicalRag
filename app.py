@@ -3,6 +3,10 @@ import os
 import re
 import sqlite3
 import uuid
+from pathlib import Path
+import tempfile
+
+from werkzeug.utils import secure_filename
 
 from datetime import datetime
 from functools import wraps
@@ -31,6 +35,7 @@ from agent import (
     home_remedy_node,
     yoga_node,
     answer_node,
+    blood_report_agent,
 )
 
 
@@ -57,6 +62,10 @@ logging.getLogger("groq").disabled = True
 # ============================================================
 
 app = Flask(__name__)
+
+app.config[
+    "MAX_CONTENT_LENGTH"
+] = 15 * 1024 * 1024
 
 app.secret_key = os.getenv(
     "FLASK_SECRET_KEY",
@@ -1488,7 +1497,7 @@ def clear():
 
 
 # ============================================================
-# HOME REMEDY SUGGESTIONS
+# HOME REMEDY SUGGESTION
 # ============================================================
 
 @app.route(
@@ -1526,6 +1535,10 @@ def home_remedy_suggestions():
 
     try:
 
+        # ====================================================
+        # VERIFY CONVERSATION
+        # ====================================================
+
         conversation = connection.execute(
             """
             SELECT id
@@ -1546,6 +1559,10 @@ def home_remedy_suggestions():
                     "Conversation not found."
             }), 404
 
+        # ====================================================
+        # LOAD COMPLETE CONVERSATION
+        # ====================================================
+
         rows = connection.execute(
             """
             SELECT role, content
@@ -1562,14 +1579,14 @@ def home_remedy_suggestions():
 
             return jsonify({
                 "error":
-                    "No conversation context found."
+                    "No conversation found."
             }), 400
 
-        conversation_messages = []
+        messages = []
 
         for row in rows:
 
-            conversation_messages.append({
+            messages.append({
                 "role":
                     row["role"],
 
@@ -1577,62 +1594,69 @@ def home_remedy_suggestions():
                     row["content"],
             })
 
-        state = {
-            "messages":
-                conversation_messages,
+        # ====================================================
+        # RUN HOME REMEDY NODE
+        # ====================================================
 
-            "enough_information":
-                True,
+        result = home_remedy_node(
+            {
+                "messages":
+                    messages,
 
-            "intent":
-                "home_remedy",
-
-            "retrieved_information":
-                "",
-        }
-
-        state = home_remedy_node(
-            state
+                "intent":
+                    "home_remedy",
+            }
         )
 
-        state = answer_node(
-            state
+        # ====================================================
+        # GENERATE FINAL HOME REMEDY RESPONSE
+        # ====================================================
+
+        result = answer_node(
+            result
         )
 
-        answer = extract_agent_answer(
-            state
+        suggestions = result.get(
+            "final_answer",
+            ""
         )
+
+        if not suggestions:
+
+            suggestions = (
+                "No additional home remedies were found "
+                "beyond the advice already provided."
+            )
+
+        suggestions = clean_patient_response(
+            suggestions
+        )
+
+        # ====================================================
+        # SAVE SUGGESTION
+        # ====================================================
 
         save_suggestion_message(
             connection,
             conversation_id,
-            answer,
+            suggestions,
         )
 
         return jsonify({
-            "success":
-                True,
-
             "suggestions":
-                answer,
-
-            "next":
-                "yoga",
-
-            "source":
-                "WEB SEARCH / AGENT",
+                suggestions
         })
 
     except Exception as error:
 
         print(
-            "HOME REMEDY SUGGESTION ERROR:",
+            "HOME REMEDY ENDPOINT ERROR:",
             repr(error)
         )
 
         return jsonify({
             "error":
-                "Unable to get home remedy suggestions."
+                "Unable to generate home remedy suggestions."
         }), 500
 
     finally:
@@ -1793,21 +1817,447 @@ def yoga_suggestions():
         connection.close()
 
 
-# ============================================================
-# INITIALIZE DATABASE
-# ============================================================
-
-init_db()
 
 
 # ============================================================
-# RUN
+# BLOOD REPORT UPLOAD
+# DIGITAL PDF ONLY
+# ============================================================
+
+ALLOWED_REPORT_EXTENSIONS = {
+    ".pdf",
+}
+
+
+@app.route(
+    "/analyze-report",
+    methods=["POST"],
+)
+@login_required
+def analyze_report():
+
+    # ========================================================
+    # CHECK FILE
+    # ========================================================
+
+    if "report" not in request.files:
+
+        return jsonify({
+            "error":
+                "Please upload a digital blood report PDF."
+        }), 400
+
+    uploaded_file = request.files[
+        "report"
+    ]
+
+    if not uploaded_file.filename:
+
+        return jsonify({
+            "error":
+                "Please select a blood report PDF."
+        }), 400
+
+    filename = secure_filename(
+        uploaded_file.filename
+    )
+
+    extension = Path(
+        filename
+    ).suffix.lower()
+
+    # ========================================================
+    # PDF ONLY
+    # ========================================================
+
+    if extension not in ALLOWED_REPORT_EXTENSIONS:
+
+        return jsonify({
+            "error":
+                "Only digital PDF blood reports are supported."
+        }), 400
+
+    # ========================================================
+    # TEMP DIRECTORY
+    # ========================================================
+
+    temporary_directory = tempfile.mkdtemp(
+        prefix="mediguide_report_"
+    )
+
+    file_path = os.path.join(
+        temporary_directory,
+        filename,
+    )
+
+    connection = get_db()
+
+    try:
+
+        # ====================================================
+        # SAVE PDF
+        # ====================================================
+
+        uploaded_file.save(
+            file_path
+        )
+
+        print(
+            "\n"
+            + "=" * 70
+        )
+
+        print(
+            "BLOOD REPORT UPLOAD"
+        )
+
+        print(
+            f"FILE: {filename}"
+        )
+
+        print(
+            "FORMAT: DIGITAL PDF ONLY"
+        )
+
+        # ====================================================
+        # CONVERSATION ID
+        #
+        # Upload works even when there is NO existing
+        # conversation/message.
+        # ====================================================
+
+        conversation_id = request.form.get(
+            "conversation_id"
+        )
+
+        user_id = session[
+            "user_id"
+        ]
+
+        # ====================================================
+        # VALIDATE EXISTING CONVERSATION
+        # ====================================================
+
+        if conversation_id:
+
+            conversation = connection.execute(
+                """
+                SELECT id
+                FROM conversations
+                WHERE id = ?
+                AND user_id = ?
+                """,
+                (
+                    conversation_id,
+                    user_id,
+                ),
+            ).fetchone()
+
+            if not conversation:
+
+                conversation_id = None
+
+        # ====================================================
+        # CREATE NEW CONVERSATION
+        #
+        # This is what allows the report to work even if
+        # the user has not sent a chat message.
+        # ====================================================
+
+        if not conversation_id:
+
+            conversation_id = str(
+                uuid.uuid4()
+            )
+
+            now = datetime.now().isoformat()
+
+            connection.execute(
+                """
+                INSERT INTO conversations (
+                    id,
+                    user_id,
+                    title,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    conversation_id,
+                    user_id,
+                    "Blood Report Analysis",
+                    now,
+                    now,
+                ),
+            )
+
+            connection.commit()
+
+        # ====================================================
+        # SAVE UPLOAD MESSAGE
+        # ====================================================
+
+        upload_message = (
+            "📎 Uploaded blood report: "
+            + filename
+        )
+
+        connection.execute(
+            """
+            INSERT INTO messages (
+                conversation_id,
+                role,
+                content,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                conversation_id,
+                "user",
+                upload_message,
+                datetime.now().isoformat(),
+            ),
+        )
+
+        connection.commit()
+
+        # ====================================================
+        # RUN BLOOD REPORT AGENT
+        #
+        # NO CHAT MESSAGE IS REQUIRED.
+        # ====================================================
+
+        print(
+            "\n"
+            + "=" * 70
+        )
+
+        print(
+            "RUNNING BLOOD REPORT AGENT"
+        )
+
+        result = blood_report_agent.invoke(
+            {
+                "file_path":
+                    file_path,
+            }
+        )
+
+        answer = result.get(
+            "final_answer",
+            "",
+        )
+
+        # ====================================================
+        # ANALYSIS ERROR
+        # ====================================================
+
+        if answer.startswith(
+            "REPORT_ANALYSIS_ERROR:"
+        ):
+
+            error_message = answer.replace(
+                "REPORT_ANALYSIS_ERROR:",
+                "",
+                1,
+            ).strip()
+
+            # Remove upload message because analysis failed
+            connection.execute(
+                """
+                DELETE FROM messages
+                WHERE conversation_id = ?
+                AND role = 'user'
+                AND content = ?
+                """,
+                (
+                    conversation_id,
+                    upload_message,
+                ),
+            )
+
+            # Remove newly-created empty conversation
+            remaining_messages = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM messages
+                WHERE conversation_id = ?
+                """,
+                (
+                    conversation_id,
+                ),
+            ).fetchone()[0]
+
+            if remaining_messages == 0:
+
+                connection.execute(
+                    """
+                    DELETE FROM conversations
+                    WHERE id = ?
+                    AND user_id = ?
+                    """,
+                    (
+                        conversation_id,
+                        user_id,
+                    ),
+                )
+
+            connection.commit()
+
+            return jsonify({
+                "error":
+                    error_message
+            }), 400
+
+        # ====================================================
+        # SAVE ANALYSIS
+        # ====================================================
+
+        connection.execute(
+            """
+            INSERT INTO messages (
+                conversation_id,
+                role,
+                content,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                conversation_id,
+                "assistant",
+                answer,
+                datetime.now().isoformat(),
+            ),
+        )
+
+        # ====================================================
+        # UPDATE CONVERSATION
+        # ========================================================
+
+        connection.execute(
+            """
+            UPDATE conversations
+            SET
+                updated_at = ?
+            WHERE id = ?
+            AND user_id = ?
+            """,
+            (
+                datetime.now().isoformat(),
+                conversation_id,
+                user_id,
+            ),
+        )
+
+        connection.commit()
+
+        print(
+            "\n"
+            + "=" * 70
+        )
+
+        print(
+            "BLOOD REPORT ANALYSIS SAVED"
+        )
+
+        print(
+            "CONVERSATION:",
+            conversation_id
+        )
+
+        print(
+            "=" * 70
+        )
+
+        # ====================================================
+        # RESPONSE
+        # ====================================================
+
+        return jsonify({
+            "success":
+                True,
+
+            "conversation_id":
+                conversation_id,
+
+            "filename":
+                filename,
+
+            "analysis":
+                answer,
+        })
+
+    except Exception as error:
+
+        connection.rollback()
+
+        print(
+            "\n"
+            + "=" * 70
+        )
+
+        print(
+            "BLOOD REPORT ROUTE ERROR:",
+            repr(error)
+        )
+
+        print(
+            "=" * 70
+        )
+
+        return jsonify({
+            "error":
+                "Unable to analyze the blood report."
+        }), 500
+
+    finally:
+
+        connection.close()
+
+        # ====================================================
+        # DELETE TEMPORARY PDF
+        # ====================================================
+
+        try:
+
+            if os.path.exists(
+                file_path
+            ):
+
+                os.remove(
+                    file_path
+                )
+
+            if os.path.exists(
+                temporary_directory
+            ):
+
+                os.rmdir(
+                    temporary_directory
+                )
+
+        except Exception as cleanup_error:
+
+            print(
+                "REPORT CLEANUP ERROR:",
+                repr(cleanup_error)
+            )
+
+
+
+# ============================================================
+# RUN FLASK APPLICATION
 # ============================================================
 
 if __name__ == "__main__":
 
+    init_db()
+
     app.run(
         host="0.0.0.0",
         port=8000,
-        debug=False,
+        debug=True,
     )

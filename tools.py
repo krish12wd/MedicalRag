@@ -12,6 +12,8 @@ from langchain_core.tools import tool
 from retriever import search_guidelines
 
 
+
+
 # ============================================================
 # MEDICAL GUIDELINE TOOL
 # ============================================================
@@ -348,44 +350,58 @@ def web_search(
     )
 
     print(
-        "QUERY:"
-    )
-
-    print(
+        "QUERY:",
         query
     )
 
     # ========================================================
-    # DDGS
+    # 1. DDGS FIRST
     # ========================================================
 
     try:
 
-        results = []
+        print(
+            "Trying DDGS..."
+        )
 
-        with DDGS() as ddgs:
+        with DDGS(
+            timeout=15
+        ) as ddgs:
 
-            search_results = ddgs.text(
+            results = ddgs.text(
                 query,
+                region="us-en",
+                safesearch="moderate",
                 max_results=num_results,
+                backend="auto",
             )
 
-            for result in search_results:
+        cleaned_results = []
 
-                title = result.get(
-                    "title",
-                    "",
-                )
+        if results:
 
-                url = result.get(
-                    "href",
-                    "",
-                )
+            for result in results:
 
-                body = result.get(
-                    "body",
-                    "",
-                )
+                title = str(
+                    result.get(
+                        "title",
+                        ""
+                    )
+                ).strip()
+
+                url = str(
+                    result.get(
+                        "href",
+                        ""
+                    )
+                ).strip()
+
+                body = str(
+                    result.get(
+                        "body",
+                        ""
+                    )
+                ).strip()
 
                 if not url:
                     continue
@@ -395,7 +411,7 @@ def web_search(
                 ):
                     continue
 
-                results.append(
+                cleaned_results.append(
                     {
                         "title":
                             title,
@@ -408,53 +424,67 @@ def web_search(
                     }
                 )
 
-        if results:
+        if cleaned_results:
 
             print(
-                f"DDGS RESULTS: {len(results)}"
+                "DDGS returned "
+                f"{len(cleaned_results)} results."
             )
 
-            return results
+            return cleaned_results
+
+        print(
+            "DDGS returned no usable results."
+        )
 
     except Exception as error:
 
         print(
-            "DDGS SEARCH ERROR:",
+            "DDGS failed:",
             repr(error)
         )
 
     # ========================================================
-    # GOOGLE FALLBACK
-    # ========================================================
-
-    try:
-
-        results = _google_search(
-            query,
-            num_results,
-        )
-
-        if results:
-
-            print(
-                f"GOOGLE RESULTS: {len(results)}"
-            )
-
-            return results
-
-    except Exception as error:
-
-        print(
-            "GOOGLE SEARCH ERROR:",
-            repr(error)
-        )
-
-    # ========================================================
-    # NOTHING FOUND
+    # 2. GOOGLE FALLBACK
     # ========================================================
 
     print(
-        "NO WEB SEARCH RESULTS"
+        "Falling back to Google..."
+    )
+
+    try:
+
+        google_results = _google_search(
+            query,
+            num_results=num_results,
+        )
+
+        if google_results:
+
+            print(
+                "Google returned "
+                f"{len(google_results)} results."
+            )
+
+            return google_results
+
+        print(
+            "Google returned no results."
+        )
+
+    except Exception as error:
+
+        print(
+            "Google fallback failed:",
+            repr(error)
+        )
+
+    # ========================================================
+    # 3. NOTHING FOUND
+    # ========================================================
+
+    print(
+        "No web search results found."
     )
 
     return []
@@ -527,13 +557,32 @@ def search_medical_web(
     Standard Treatment Guidelines do not contain
     relevant information.
 
-    Prefer reliable medical and healthcare sources.
+    DDGS is always tried first.
+    Google is used as fallback.
     """
+
+    # ========================================================
+    # CLEAN QUERY
+    # ========================================================
+
+    query = str(
+        query
+    ).strip()
+
+    query = re.sub(
+        r"\s+",
+        " ",
+        query,
+    )
+
+    # ========================================================
+    # TARGETED MEDICAL QUERY
+    # ========================================================
 
     search_query = (
         f"{query} "
-        f"medical treatment management "
-        f"medicine clinical guidance"
+        f"medical guidance "
+        f"clinical management"
     )
 
     print(
@@ -603,9 +652,17 @@ def search_medical_web(
         if not url:
             continue
 
+        # ----------------------------------------------------
+        # TRY TO FETCH ACTUAL PAGE
+        # ----------------------------------------------------
+
         content = _fetch_webpage_text(
             url
         )
+
+        # ----------------------------------------------------
+        # FALLBACK TO SEARCH SNIPPET
+        # ----------------------------------------------------
 
         if not content:
 
@@ -842,3 +899,664 @@ SUMMARY:
     return "\n".join(
         output
     )
+
+# ============================================================
+# BLOOD REPORT ANALYSIS
+# DIGITAL PDF ONLY
+# ============================================================
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+from pypdf import PdfReader
+
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+
+
+load_dotenv()
+
+
+# ============================================================
+# BLOOD REPORT MODEL
+# ============================================================
+
+REPORT_MODEL = os.getenv(
+    "QWEN_MODEL",
+    "qwen-plus",
+)
+
+
+report_llm = ChatOpenAI(
+    model=REPORT_MODEL,
+    temperature=0.0,
+    api_key=os.getenv("QWEN_API_KEY"),
+    base_url=os.getenv(
+        "QWEN_BASE_URL",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    ),
+)
+
+
+# ============================================================
+# BLOOD REPORT PROMPT
+# ============================================================
+
+BLOOD_REPORT_PROMPT = """
+You are MediGuide AI's Blood Report Analysis Agent.
+
+Your job is to analyze ONLY the uploaded digital/text-based
+laboratory report.
+
+The uploaded report is the PRIMARY and AUTHORITATIVE source
+for all patient-specific values.
+
+============================================================
+STRICT REPORT ACCURACY
+============================================================
+
+1. Read the COMPLETE uploaded report before answering.
+
+2. Use ONLY values actually present in the uploaded report.
+
+3. NEVER invent:
+   - test names
+   - values
+   - units
+   - reference ranges
+   - patient details
+   - laboratory interpretations
+
+4. Preserve every reported value exactly.
+
+5. Preserve the laboratory's own reference range whenever
+   it is present.
+
+6. Determine Normal / High / Low ONLY by comparing the value
+   with the reference range printed in that report.
+
+7. If the report itself marks a value as Borderline,
+   preserve that wording.
+
+8. If the laboratory has its own interpretation, report it
+   accurately.
+
+9. Do NOT convert "possible", "suggestive", "may indicate",
+   or "further confirmation required" into a confirmed
+   diagnosis.
+
+10. Example:
+
+    If the report says:
+
+    Hemoglobin: 12.5 g/dL
+    Reference: 13.0–17.0 g/dL
+    Interpretation:
+    Further confirm for Anemia
+
+    Then say:
+
+    "Hemoglobin is below the laboratory reference range.
+    The laboratory recommends further confirmation for
+    anemia."
+
+    NEVER say:
+
+    "This confirms anemia."
+
+============================================================
+WEB INFORMATION
+============================================================
+
+Web information is SUPPLEMENTARY ONLY.
+
+The uploaded report always has priority.
+
+Web information may be used only to explain the general
+medical significance of a finding.
+
+NEVER use web information to:
+
+- replace a value from the report
+- replace a reference range from the report
+- change a laboratory interpretation
+- create a diagnosis
+- create a treatment plan
+- prescribe medicine
+
+If web information conflicts with the uploaded report,
+DO NOT change the report value.
+
+Say that the finding should be interpreted by a healthcare
+professional.
+
+============================================================
+MEDICAL SAFETY
+============================================================
+
+1. Do NOT diagnose a disease from laboratory values alone.
+
+2. Do NOT claim that an abnormal value definitely means
+   a particular disease.
+
+3. Do NOT prescribe medication.
+
+4. Do NOT provide medication dosage.
+
+5. Do NOT tell the patient to start or stop medication.
+
+6. Do NOT recommend supplements solely from the report.
+
+7. Do NOT assume the cause of an abnormal value.
+
+8. If a result may require medical review, recommend
+   discussing it with a healthcare professional.
+
+9. Do not unnecessarily frighten the patient.
+
+============================================================
+OUTPUT
+============================================================
+
+Use exactly this structure:
+
+Blood Report Summary
+
+Overall:
+Give a short summary of the report.
+
+Important Values:
+
+• Test:
+Value:
+Reference range:
+Status:
+
+Only include important or abnormal values here.
+
+Other Reported Findings:
+Mention important normal findings when useful.
+
+Abnormal or Notable Findings:
+Explain the abnormal/borderline findings using only the
+actual report.
+
+What This May Mean:
+Explain the findings in simple language.
+
+Do NOT make a definitive diagnosis.
+
+Suggested Next Steps:
+Give safe, practical next steps based primarily on the report.
+
+Do NOT prescribe medicine.
+
+If appropriate, recommend discussing the findings with
+a doctor.
+
+Red Flags:
+Mention urgent medical symptoms only when relevant.
+
+Important:
+This is an AI-generated explanation of the uploaded laboratory
+report and is not a medical diagnosis.
+
+============================================================
+FINAL RULE
+============================================================
+
+The uploaded report is the source of truth for:
+
+- patient-specific values
+- units
+- reference ranges
+- laboratory interpretation
+- abnormal/normal status
+
+Web search is ONLY supplementary context.
+"""
+
+
+# ============================================================
+# DIGITAL PDF TEXT EXTRACTION
+# ============================================================
+
+def extract_digital_pdf_text(
+    file_path: str,
+) -> str:
+    """
+    Extract text from a genuine digital/text PDF.
+
+    Scanned/image-only PDFs are rejected.
+
+    No OCR is used.
+    """
+
+    try:
+
+        reader = PdfReader(
+            file_path
+        )
+
+    except Exception as error:
+
+        raise ValueError(
+            "Unable to read the uploaded PDF: "
+            + str(error)
+        )
+
+    if not reader.pages:
+
+        raise ValueError(
+            "The uploaded PDF contains no pages."
+        )
+
+    extracted_pages = []
+
+    total_characters = 0
+
+    for page_number, page in enumerate(
+        reader.pages,
+        start=1,
+    ):
+
+        try:
+
+            text = page.extract_text()
+
+        except Exception:
+
+            text = ""
+
+        if text:
+
+            text = text.strip()
+
+        # ----------------------------------------------------
+        # SAVE ONLY PAGES WITH DIGITAL TEXT
+        # ----------------------------------------------------
+
+        if text:
+
+            extracted_pages.append(
+                f"""
+PAGE {page_number}
+
+{text}
+"""
+            )
+
+            total_characters += len(
+                text
+            )
+
+    # ========================================================
+    # SCANNED / IMAGE PDF CHECK
+    # ========================================================
+
+    if not extracted_pages:
+
+        raise ValueError(
+            "This PDF appears to be scanned or image-based. "
+            "Only digital/text-based PDFs are supported."
+        )
+
+    # ========================================================
+    # VERY LOW TEXT CHECK
+    # ========================================================
+
+    if total_characters < 50:
+
+        raise ValueError(
+            "This PDF does not contain enough extractable "
+            "digital text. Scanned or image-based PDFs "
+            "are not supported."
+        )
+
+    print(
+        f"DIGITAL PDF TEXT EXTRACTED: "
+        f"{total_characters} characters"
+    )
+
+    return "\n".join(
+        extracted_pages
+    )
+
+
+# ============================================================
+# BLOOD REPORT WEB CONTEXT
+# ============================================================
+
+def get_blood_report_web_context():
+
+    """
+    Uses the SAME existing web_search() used by the
+    medical/home-remedy/yoga features.
+
+    Therefore:
+
+        DDGS
+          ↓
+        Google fallback
+
+    No separate search implementation is created.
+    """
+
+    query = (
+        "CBC blood test interpretation "
+        "hemoglobin hematocrit PCV platelet "
+        "MCV MCH MCHC RDW reference ranges "
+        "medical explanation"
+    )
+
+    print(
+        "\n"
+        + "=" * 70
+    )
+
+    print(
+        "BLOOD REPORT WEB CONTEXT"
+    )
+
+    print(
+        "Using existing DDGS → Google fallback"
+    )
+
+    try:
+
+        results = web_search(
+            query,
+            num_results=8,
+        )
+
+    except Exception as error:
+
+        print(
+            "BLOOD REPORT WEB SEARCH ERROR:",
+            repr(error)
+        )
+
+        return ""
+
+    if not results:
+
+        print(
+            "BLOOD REPORT WEB: NO RESULTS"
+        )
+
+        return ""
+
+    context_parts = []
+
+    for index, result in enumerate(
+        results[:5],
+        start=1,
+    ):
+
+        title = result.get(
+            "title",
+            "",
+        )
+
+        url = result.get(
+            "url",
+            "",
+        )
+
+        body = result.get(
+            "body",
+            "",
+        )
+
+        if not body:
+
+            continue
+
+        context_parts.append(
+            f"""
+WEB SOURCE {index}
+
+TITLE:
+{title}
+
+URL:
+{url}
+
+GENERAL INFORMATION:
+{body}
+"""
+        )
+
+    context = "\n".join(
+        context_parts
+    )
+
+    print(
+        f"BLOOD REPORT WEB SOURCES USED: "
+        f"{len(context_parts)}"
+    )
+
+    return context
+
+
+# ============================================================
+# BLOOD REPORT TOOL
+# ============================================================
+
+@tool
+def analyze_blood_report(
+    file_path: str,
+) -> str:
+    """
+    Analyze a digital/text-based blood report PDF.
+
+    Supported:
+        Digital PDF containing selectable/extractable text.
+
+    Not supported:
+        Scanned PDF
+        Image PDF
+        PNG/JPG
+        Screenshot
+        Photograph
+    """
+
+    try:
+
+        # ====================================================
+        # FILE CHECK
+        # ====================================================
+
+        if not file_path:
+
+            return (
+                "REPORT_ANALYSIS_ERROR: "
+                "No blood report was provided."
+            )
+
+        if not os.path.exists(
+            file_path
+        ):
+
+            return (
+                "REPORT_ANALYSIS_ERROR: "
+                "The uploaded blood report could not be found."
+            )
+
+        extension = Path(
+            file_path
+        ).suffix.lower()
+
+        if extension != ".pdf":
+
+            return (
+                "REPORT_ANALYSIS_ERROR: "
+                "Only digital PDF blood reports are supported."
+            )
+
+        print(
+            "\n"
+            + "=" * 70
+        )
+
+        print(
+            "BLOOD REPORT ANALYSIS"
+        )
+
+        print(
+            f"FILE: {Path(file_path).name}"
+        )
+
+        print(
+            "FORMAT: DIGITAL/TEXT PDF ONLY"
+        )
+
+        # ====================================================
+        # EXTRACT REPORT
+        # ====================================================
+
+        print(
+            "\nExtracting digital PDF text..."
+        )
+
+        report_text = extract_digital_pdf_text(
+            file_path
+        )
+
+        # ====================================================
+        # LIMIT VERY LARGE REPORTS
+        # ====================================================
+
+        maximum_characters = 100000
+
+        if len(report_text) > maximum_characters:
+
+            report_text = report_text[
+                :maximum_characters
+            ]
+
+            report_text += (
+                "\n\n"
+                "[Report text truncated because "
+                "the document is unusually large.]"
+            )
+
+        # ====================================================
+        # WEB CONTEXT
+        # ====================================================
+
+        web_context = (
+            get_blood_report_web_context()
+        )
+
+        if not web_context:
+
+            web_context = (
+                "No supplementary web information "
+                "was available."
+            )
+
+        # ====================================================
+        # FINAL PROMPT
+        # ====================================================
+
+        prompt = f"""
+{BLOOD_REPORT_PROMPT}
+
+============================================================
+UPLOADED REPORT
+============================================================
+
+{report_text}
+
+============================================================
+END UPLOADED REPORT
+============================================================
+
+
+============================================================
+SUPPLEMENTARY WEB INFORMATION
+============================================================
+
+{web_context}
+
+============================================================
+END WEB INFORMATION
+============================================================
+
+Now analyze the uploaded report.
+
+REMEMBER:
+
+The uploaded report is the source of truth.
+
+Do not replace any report value with web information.
+
+Do not diagnose beyond what the report supports.
+
+Do not prescribe medication.
+
+Return ONLY the patient-facing blood report summary.
+"""
+
+        # ====================================================
+        # LLM
+        # ====================================================
+
+        print(
+            "\nGenerating report-grounded summary..."
+        )
+
+        response = report_llm.invoke(
+            [
+                HumanMessage(
+                    content=prompt
+                )
+            ]
+        )
+
+        answer = str(
+            response.content
+        ).strip()
+
+        if not answer:
+
+            return (
+                "REPORT_ANALYSIS_ERROR: "
+                "The blood report could not be analyzed."
+            )
+
+        print(
+            "\nBLOOD REPORT ANALYSIS COMPLETED"
+        )
+
+        print(
+            "=" * 70
+        )
+
+        return answer
+
+    except ValueError as error:
+
+        print(
+            "BLOOD REPORT VALIDATION ERROR:",
+            str(error)
+        )
+
+        return (
+            "REPORT_ANALYSIS_ERROR: "
+            + str(error)
+        )
+
+    except Exception as error:
+
+        print(
+            "BLOOD REPORT ERROR:",
+            repr(error)
+        )
+
+        return (
+            "REPORT_ANALYSIS_ERROR: "
+            "Unable to analyze the blood report."
+        )

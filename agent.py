@@ -80,6 +80,8 @@ class AgentState(TypedDict, total=False):
 
     final_answer: str
 
+    already_given_advice: str
+
 
 # ============================================================
 # MESSAGE HELPERS
@@ -259,15 +261,116 @@ def get_current_datetime():
 
 def build_search_query(
     messages,
-    max_length=5000,
+    max_length=1200,
 ):
 
-    text = user_conversation_text(
-        messages
+    """
+    Build a clean medical search query.
+
+    IMPORTANT:
+    Do NOT send:
+    - uploaded file names
+    - UI messages
+    - attachment labels
+    - full conversation blindly
+    - unnecessary filler
+
+    Only patient-provided clinical information is used.
+    """
+
+    clinical_parts = []
+
+    for message in messages:
+
+        role = get_message_role(
+            message
+        )
+
+        if role != "user":
+            continue
+
+        content = get_message_content(
+            message
+        ).strip()
+
+        if not content:
+            continue
+
+        # ----------------------------------------------------
+        # REMOVE UPLOADED FILE MESSAGES
+        # ----------------------------------------------------
+
+        if content.startswith(
+            "📎 Uploaded blood report:"
+        ):
+            continue
+
+        if content.lower().startswith(
+            "uploaded blood report:"
+        ):
+            continue
+
+        # ----------------------------------------------------
+        # REMOVE UI / NON-CLINICAL CONTENT
+        # ----------------------------------------------------
+
+        if content.lower() in {
+            "hi",
+            "hello",
+            "hey",
+            "ok",
+            "okay",
+            "yes",
+            "no",
+            "nahi",
+            "nhi",
+            "haan",
+            "han",
+        }:
+            continue
+
+        clinical_parts.append(
+            content
+        )
+
+    if not clinical_parts:
+
+        return ""
+
+    # --------------------------------------------------------
+    # COMBINE ONLY PATIENT INFORMATION
+    # --------------------------------------------------------
+
+    text = " ".join(
+        clinical_parts
     )
 
-    if not text:
-        return ""
+    # --------------------------------------------------------
+    # REMOVE COMMON CONVERSATIONAL FILLERS
+    # --------------------------------------------------------
+
+    text = re.sub(
+        r"\b(?:please|tell me|can you tell me|"
+        r"what should i do|what can i do|"
+        r"i want to know|let me know)\b",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # --------------------------------------------------------
+    # NORMALIZE WHITESPACE
+    # --------------------------------------------------------
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text,
+    ).strip()
+
+    # --------------------------------------------------------
+    # KEEP QUERY REASONABLY SMALL
+    # --------------------------------------------------------
 
     if len(text) > max_length:
 
@@ -930,13 +1033,19 @@ def medical_web_node(
         []
     )
 
-    conversation = user_conversation_text(
+    # ========================================================
+    # BUILD CLEAN CLINICAL QUERY
+    # ========================================================
+
+    conversation = build_search_query(
         messages
     )
 
     if not conversation:
 
-        conversation = "medical complaint"
+        conversation = (
+            "medical symptoms treatment guidance"
+        )
 
     print(
         "\n"
@@ -949,6 +1058,14 @@ def medical_web_node(
 
     print(
         "SWITCHING TO MEDICAL WEB SEARCH"
+    )
+
+    print(
+        "CLEAN MEDICAL QUERY:"
+    )
+
+    print(
+        conversation
     )
 
     try:
@@ -1032,6 +1149,38 @@ def home_remedy_node(
             "safe home remedies self care"
         )
 
+    # ========================================================
+    # FIND MAIN MEDICAL ANSWER
+    # ========================================================
+
+    already_given = (
+        extract_main_answer_from_history(
+            messages
+        )
+    )
+
+    print(
+        "\n"
+        + "=" * 70
+    )
+
+    print(
+        "HOME REMEDY SEARCH"
+    )
+
+    print(
+        "Already-given medical answer:"
+    )
+
+    print(
+        already_given[:1500]
+    )
+
+    # ========================================================
+    # WEB SEARCH
+    # DDGS FIRST -> GOOGLE FALLBACK
+    # ========================================================
+
     try:
 
         result = (
@@ -1062,6 +1211,11 @@ def home_remedy_node(
 
         "retrieval_source":
             "WEB",
+
+        # IMPORTANT:
+        # Pass previous medical answer to answer_node.
+        "already_given_advice":
+            already_given,
     }
 
 
@@ -1157,29 +1311,50 @@ def answer_node(
 
     if source == "PDF":
 
-        print("\n" + "=" * 70)
+        print(
+            "\n"
+            + "=" * 70
+        )
+
         print(
             "FINAL RESPONSE SOURCE: "
             "RAG / STANDARD TREATMENT GUIDELINES"
         )
-        print("=" * 70)
+
+        print(
+            "=" * 70
+        )
 
     elif source == "WEB":
 
-        print("\n" + "=" * 70)
+        print(
+            "\n"
+            + "=" * 70
+        )
+
         print(
             "FINAL RESPONSE SOURCE: "
             "WEB SEARCH / AGENT"
         )
-        print("=" * 70)
+
+        print(
+            "=" * 70
+        )
 
     else:
 
-        print("\n" + "=" * 70)
+        print(
+            "\n"
+            + "=" * 70
+        )
+
         print(
             "FINAL RESPONSE SOURCE: NONE"
         )
-        print("=" * 70)
+
+        print(
+            "=" * 70
+        )
 
     # ========================================================
     # NOTHING FOUND
@@ -1224,6 +1399,11 @@ def answer_node(
 
     if intent == "home_remedy":
 
+        already_given = state.get(
+            "already_given_advice",
+            ""
+        )
+
         prompt = f"""
 You are MediGuide AI.
 
@@ -1236,46 +1416,214 @@ PATIENT CONVERSATION
 {history}
 
 ============================================================
-RETRIEVED INFORMATION
+ALREADY GIVEN MAIN MEDICAL RESPONSE
+============================================================
+
+{already_given}
+
+============================================================
+NEW WEB INFORMATION
 ============================================================
 
 {retrieved}
 
 ============================================================
-HOME REMEDIES RULES
+MOST IMPORTANT RULE — NO DUPLICATES
 ============================================================
 
-Use ONLY information supported by the retrieved content.
+The "ALREADY GIVEN MAIN MEDICAL RESPONSE" has already been
+shown to the patient.
 
-This response is ONLY for home remedies and self-care.
+You MUST NOT repeat any advice that is already present there.
 
-DO NOT include:
+This includes:
 
-• Medicine
+• Exact duplicate advice
+• Same advice with different wording
+• Paraphrased advice
+• Advice that has the same practical action
+• Advice that is only slightly reworded
+
+Examples:
+
+Already given:
+"Drink plenty of fluids."
+
+DO NOT write:
+"Drink lots of water."
+"Keep yourself hydrated."
+"Have plenty of fluids."
+
+These are the SAME recommendation.
+
+------------------------------------------------------------
+
+Already given:
+"Get enough rest."
+
+DO NOT write:
+"Take adequate rest."
+"Rest properly."
+"Avoid exertion and get plenty of rest."
+
+These are the SAME recommendation.
+
+------------------------------------------------------------
+
+Already given:
+"Gargle with warm salt water."
+
+DO NOT write:
+"Try warm salt-water gargles."
+"Rinse your throat with warm salty water."
+
+These are the SAME recommendation.
+
+============================================================
+WHAT YOU SHOULD DO
+============================================================
+
+From the NEW WEB INFORMATION:
+
+1. Identify useful home-care recommendations.
+
+2. Compare every recommendation with the
+   ALREADY GIVEN MAIN MEDICAL RESPONSE.
+
+3. Remove anything that is already given or substantially
+   overlaps with something already given.
+
+4. Return ONLY genuinely additional recommendations.
+
+5. If there are no genuinely new recommendations,
+   say:
+
+"No additional home remedies were found beyond the advice
+already provided."
+
+Do NOT invent a remedy just to make the answer longer.
+
+============================================================
+SAFETY
+============================================================
+
+Use only information supported by the retrieved web content.
+
+Do NOT provide:
+
 • Medicines
-• Medication
 • Drug names
 • Dosages
-• Frequency of medicines
-• A "Medicine:" section
-• A "See a doctor if:" section
-• Doctor/medical warning sections
-• Yoga recommendations unless specifically part of safe
-  home self-care relevant to the patient's condition
+• Medication frequency
+• Prescription instructions
+• Diagnosis
+• Treatment plan
+• Unsupported medical claims
 
-Do NOT repeat the main medical treatment response.
+Do NOT tell the patient to start or stop medication.
 
-Keep it SHORT.
+Do NOT turn a general home remedy into a medical treatment.
 
 ============================================================
 FORMAT
 ============================================================
 
-Start with ONE short sentence.
+Start the response with this exact heading:
+
+**Home Remedies**
+
+Then write one short introductory sentence.
+
+Then use:
+
+For now:
+• ...
+• ...
+• ...
+• ...
+
+Example format:
+
+**Home Remedies**
+
+Based on your symptoms, here are some home remedies that may help.
+
+For now:
+• Drink plenty of fluids like water, juices, or warm broth to stay hydrated.
+• Get enough rest and wear light clothing to keep your body comfortable.
+• Gargle with warm salt water to soothe your sore throat.
+• Keep your room cool and use a damp cloth on your forehead for relief.
+
+============================================================
+MINIMUM 4 UNIQUE HOME REMEDIES
+============================================================
+
+You MUST try to provide AT LEAST 4 genuinely different
+additional home-remedy recommendations.
+
+However, the 4 recommendations MUST satisfy all of these:
+
+• They must NOT already appear in the main medical response.
+• They must NOT be paraphrases of existing advice.
+• They must NOT be duplicates of each other.
+• They must be supported by the NEW WEB INFORMATION.
+• They must be appropriate for the patient's symptoms.
+• Do NOT invent a recommendation just to reach 4.
+
+If the retrieved web information contains fewer than
+4 safe and genuinely new recommendations, return only
+the genuinely supported recommendations.
+
+NEVER repeat an existing recommendation merely to reach 4.
+
+============================================================
+DUPLICATE CHECK
+============================================================
+
+Before returning each recommendation, compare it against:
+
+1. ALREADY GIVEN MAIN MEDICAL RESPONSE
+2. ALL OTHER HOME REMEDIES YOU ARE ABOUT TO RETURN
+
+Reject a recommendation if it:
+
+• Has the same practical action
+• Is only a wording change
+• Is a paraphrase
+• Is a more general version of an existing point
+• Is a more specific version of an existing point
 
 Example:
 
-Based on your symptoms, here are some home remedies that may help.
+Already given:
+"Drink plenty of fluids."
+
+Reject:
+"Drink more water."
+"Stay hydrated."
+"Drink warm fluids."
+
+These are overlapping recommendations.
+
+Example:
+
+Already given:
+"Get enough rest."
+
+Reject:
+"Take adequate rest."
+"Avoid strenuous activity and rest."
+"Sleep well."
+
+These substantially overlap with the existing advice.
+
+============================================================
+FORMAT
+============================================================
+
+Start with:
+
+"Here are some additional home remedies that may help:"
 
 Then:
 
@@ -1285,27 +1633,29 @@ For now:
 • ...
 • ...
 
-Use 2–4 concise bullets.
+Prefer 4 unique bullets when 4 genuinely supported
+recommendations are available.
 
-Every actionable point MUST start with:
+Do not use more than 4 bullets.
 
-•
-
-Each bullet must be on its own line.
-
-Do not use:
-
--
-*
-1.
-2.
-3.
+If fewer than 4 genuinely new and supported remedies
+are available, use fewer than 4 rather than inventing
+or duplicating advice.
 
 Do not use tables.
 
-Do not explain reasoning.
+Do not explain the filtering process.
 
-Do not copy the retrieved content word-for-word.
+Do not mention internal systems.
+
+Every bullet must be genuinely different from the
+already-given medical advice.
+
+Do not repeat the same recommendation using different words.
+
+Do not use tables.
+
+Do not explain your filtering process.
 
 Do not mention internal systems.
 
@@ -1320,10 +1670,18 @@ English → simple English.
 Hinglish → simple Hinglish.
 
 ============================================================
-FINAL ANSWER
+FINAL RULE
 ============================================================
 
-Return ONLY the patient-facing home-remedy answer.
+The patient has ALREADY SEEN the main medical response.
+
+Therefore:
+
+NEW INFORMATION ONLY.
+
+No duplicates.
+No paraphrased duplicates.
+No overlapping recommendations.
 """
 
     # ========================================================
@@ -1387,20 +1745,21 @@ Keep it SHORT.
 FORMAT
 ============================================================
 
-Start with ONE short sentence.
+Start the response with this exact heading:
 
-Example:
+**Yoga**
 
-Based on your fever, you should skip yoga for now.
+Then write one short introductory sentence.
 
-Then:
+Then use:
 
 For now:
 • ...
 • ...
 • ...
+• ...
 
-Use 2–4 concise bullets.
+Use 4 concise bullets.
 
 Every actionable point MUST start with:
 
@@ -1671,10 +2030,7 @@ Return ONLY the patient-facing answer.
         flags=re.IGNORECASE,
     )
 
-    answer = answer.replace(
-        "**",
-        ""
-    )
+
 
     # ========================================================
     # EXTRA SAFETY:
@@ -1832,6 +2188,43 @@ Return ONLY the patient-facing answer.
         lines
     ).strip()
 
+
+# ========================================================
+# ENSURE HOME REMEDIES / YOGA HEADING
+# ========================================================
+
+        # ========================================================
+    # ENSURE HOME REMEDIES / YOGA HEADING
+    # ========================================================
+
+    if intent == "home_remedy":
+
+        # Remove any existing variation of the heading
+        answer = re.sub(
+            r"(?im)^\s*(?:\*\*)?home remedies(?:\*\*)?\s*$",
+            "",
+            answer,
+        )
+
+        answer = (
+            "**Home Remedies**\n"
+            + answer.strip()
+        )
+
+    elif intent == "yoga":
+
+        # Remove any existing variation of the heading
+        answer = re.sub(
+            r"(?im)^\s*(?:\*\*)?yoga(?:\*\*)?\s*$",
+            "",
+            answer,
+        )
+
+        answer = (
+            "**Yoga**\n"
+            + answer.strip()
+        )
+
     return {
         **state,
 
@@ -1880,6 +2273,48 @@ def intent_router(
         return "yoga"
 
     return "medical"
+
+
+# ============================================================
+# EXTRACT ALREADY-GIVEN ADVICE
+# ============================================================
+
+def extract_main_answer_from_history(messages):
+    """
+    Find the most recent useful medical assistant answer.
+
+    This is used by Home Remedies and Yoga so they do not
+    repeat advice that was already given to the patient.
+    """
+
+    for message in reversed(messages):
+
+        role = get_message_role(message)
+
+        if role != "assistant":
+            continue
+
+        content = get_message_content(message).strip()
+
+        if not content:
+            continue
+
+        # Ignore previous home-remedy/yoga style responses
+        # if they are explicitly marked.
+        lower = content.lower()
+
+        if (
+            "here are some home remedies" in lower
+            or
+            "suggestion for home remedies" in lower
+            or
+            "suggestion for yoga" in lower
+        ):
+            continue
+
+        return content
+
+    return ""
 
 
 # ============================================================
@@ -2062,3 +2497,132 @@ graph.add_edge(
 # ============================================================
 
 agent = graph.compile()
+
+
+# ============================================================
+# BLOOD REPORT AGENT
+# DIGITAL PDF ONLY
+# ============================================================
+
+from typing import TypedDict
+
+from langgraph.graph import StateGraph, END
+
+from tools import analyze_blood_report
+
+
+# ============================================================
+# BLOOD REPORT STATE
+# ============================================================
+
+class BloodReportState(
+    TypedDict,
+    total=False,
+):
+
+    file_path: str
+
+    report_analysis: str
+
+    final_answer: str
+
+
+# ============================================================
+# BLOOD REPORT NODE
+# ============================================================
+
+def analyze_blood_report_node(
+    state: BloodReportState,
+):
+
+    file_path = state.get(
+        "file_path",
+        "",
+    )
+
+    print(
+        "\n"
+        + "=" * 70
+    )
+
+    print(
+        "BLOOD REPORT AGENT"
+    )
+
+    print(
+        "FILE:",
+        file_path
+    )
+
+    print(
+        "CALLING BLOOD REPORT TOOL"
+    )
+
+    result = analyze_blood_report.invoke(
+        {
+            "file_path":
+                file_path,
+        }
+    )
+
+    print(
+        "BLOOD REPORT TOOL COMPLETED"
+    )
+
+    return {
+        "file_path":
+            file_path,
+
+        "report_analysis":
+            result,
+
+        "final_answer":
+            result,
+    }
+
+
+# ============================================================
+# BLOOD REPORT GRAPH
+# ============================================================
+
+blood_report_graph = StateGraph(
+    BloodReportState
+)
+
+
+# ============================================================
+# NODE
+# ============================================================
+
+blood_report_graph.add_node(
+    "analyze_blood_report",
+    analyze_blood_report_node,
+)
+
+
+# ============================================================
+# ENTRY
+# ============================================================
+
+blood_report_graph.set_entry_point(
+    "analyze_blood_report"
+)
+
+
+# ============================================================
+# END
+# ============================================================
+
+blood_report_graph.add_edge(
+    "analyze_blood_report",
+    END,
+)
+
+
+# ============================================================
+# COMPILE
+# ============================================================
+
+blood_report_agent = (
+    blood_report_graph.compile()
+)

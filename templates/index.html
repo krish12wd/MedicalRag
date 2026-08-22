@@ -304,25 +304,86 @@
 
             <div class="input-container">
 
-                <textarea
-                    id="messageInput"
-                    rows="1"
-                    placeholder="Ask a question about the Standard Treatment Guidelines..."
-                ></textarea>
+    <!-- =====================================================
+         PLUS / UPLOAD BUTTON
+         ===================================================== -->
 
-                <button
-                    id="sendButton"
-                    class="send-button"
-                    title="Send message"
-                >
+    <div class="upload-wrapper">
 
-                    <span>
-                        ➤
-                    </span>
+        <button
+            id="uploadButton"
+            class="upload-button"
+            type="button"
+            title="Upload blood report"
+        >
+            +
+        </button>
 
-                </button>
 
-            </div>
+        <div
+            id="uploadMenu"
+            class="upload-menu"
+        >
+
+            <button
+                id="uploadPdfButton"
+                type="button"
+                class="upload-menu-item"
+            >
+
+                <span>
+                    📄
+                </span>
+
+                Upload Blood Report PDF
+
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         EXISTING MESSAGE INPUT
+         ===================================================== -->
+
+    <textarea
+        id="messageInput"
+        rows="1"
+        placeholder="Ask a question about the Standard Treatment Guidelines..."
+    ></textarea>
+
+
+    <!-- =====================================================
+         EXISTING SEND BUTTON
+         ===================================================== -->
+
+    <button
+        id="sendButton"
+        class="send-button"
+        title="Send message"
+    >
+
+        <span>
+            ➤
+        </span>
+
+    </button>
+
+</div>
+
+
+<!-- =========================================================
+     DIGITAL PDF INPUT ONLY
+     ========================================================= -->
+
+<input
+    type="file"
+    id="bloodReportPdfInput"
+    accept=".pdf,application/pdf"
+    hidden
+>
 
             <div class="input-footer">
 

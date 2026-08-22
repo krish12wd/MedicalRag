@@ -2240,3 +2240,203 @@ body {
 
     transform: none;
 }
+
+
+
+/* =========================================================
+   BLOOD REPORT UPLOAD
+   DIGITAL PDF ONLY
+   ========================================================= */
+
+.input-container {
+    position: relative;
+}
+
+
+/* =========================================================
+   UPLOAD WRAPPER
+   ========================================================= */
+
+.upload-wrapper {
+    position: relative;
+    flex-shrink: 0;
+}
+
+
+/* =========================================================
+   PLUS BUTTON
+   ========================================================= */
+
+.upload-button {
+    width: 42px;
+    height: 42px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border: 1px solid var(--border);
+    border-radius: 12px;
+
+    background: white;
+    color: var(--primary);
+
+    font-size: 27px;
+    font-weight: 400;
+
+    line-height: 1;
+
+    cursor: pointer;
+
+    transition:
+        background 0.2s,
+        border-color 0.2s,
+        transform 0.2s;
+}
+
+
+.upload-button:hover {
+    background: #f5f7ff;
+    border-color: #cdd7f7;
+
+    transform:
+        translateY(-1px);
+}
+
+
+.upload-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+
+/* =========================================================
+   UPLOAD MENU
+   ========================================================= */
+
+.upload-menu {
+    position: absolute;
+
+    left: 0;
+    bottom: 52px;
+
+    width: 245px;
+
+    padding: 7px;
+
+    display: none;
+
+    background: white;
+
+    border: 1px solid var(--border);
+
+    border-radius: 14px;
+
+    box-shadow:
+        0 15px 40px
+        rgba(
+            20,
+            30,
+            60,
+            0.14
+        );
+
+    z-index: 100;
+}
+
+
+.upload-menu.show {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 3px;
+}
+
+
+/* =========================================================
+   PDF MENU ITEM
+   ========================================================= */
+
+.upload-menu-item {
+    width: 100%;
+
+    padding: 12px 13px;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+
+    border: none;
+
+    border-radius: 9px;
+
+    background: transparent;
+
+    color: var(--text);
+
+    font-family: inherit;
+
+    font-size: 13px;
+
+    text-align: left;
+
+    cursor: pointer;
+
+    transition:
+        background 0.2s,
+        color 0.2s;
+}
+
+
+.upload-menu-item:hover {
+    background: #f5f7ff;
+
+    color: var(--primary);
+}
+
+
+.upload-menu-item span {
+    width: 25px;
+
+    font-size: 17px;
+
+    text-align: center;
+}
+
+
+/* =========================================================
+   BLOOD REPORT RESULT
+   ========================================================= */
+
+.blood-report-result {
+    white-space: pre-wrap;
+
+    line-height: 1.65;
+
+    max-width: 900px;
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (
+    max-width: 700px
+) {
+
+    .upload-menu {
+        left: -5px;
+
+        width: 220px;
+    }
+
+    .upload-button {
+        width: 40px;
+        height: 40px;
+    }
+
+}
