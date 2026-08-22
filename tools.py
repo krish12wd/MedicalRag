@@ -1117,6 +1117,172 @@ The uploaded report is the source of truth for:
 Web search is ONLY supplementary context.
 """
 
+# ============================================================
+# BLOOD REPORT DOCUMENT CLASSIFICATION
+# ============================================================
+
+BLOOD_REPORT_CLASSIFICATION_PROMPT = """
+You are MediGuide AI's Blood Report Document Classification Agent.
+
+Your ONLY task is to determine whether the uploaded PDF text
+is actually a medical laboratory / blood test report.
+
+The application supports digital/text PDFs only.
+The PDF text has already been extracted using pypdf.
+
+============================================================
+IMPORTANT
+============================================================
+
+Do NOT classify a document as a blood report merely because
+it contains words such as:
+
+blood
+medical
+laboratory
+patient
+specimen
+hemoglobin
+CBC
+doctor
+
+Those words alone are NOT sufficient.
+
+You must understand the actual DOCUMENT CONTENT and STRUCTURE.
+
+============================================================
+CLASSIFY AS BLOOD_REPORT ONLY IF:
+============================================================
+
+The document actually contains laboratory test results.
+
+For example, it may contain:
+
+- test names
+- measured patient values
+- units
+- laboratory reference ranges
+- normal/high/low flags
+- laboratory interpretations
+
+The document does NOT need to contain every one of these,
+but it must clearly represent actual laboratory test results.
+
+CBC, blood chemistry, lipid profile, thyroid blood tests,
+iron studies, vitamin blood tests and similar laboratory
+reports can be classified as BLOOD_REPORT.
+
+============================================================
+CLASSIFY AS NOT_BLOOD_REPORT:
+============================================================
+
+Examples include:
+
+- Resume / CV
+- Invoice
+- Certificate
+- Research paper
+- Medical article
+- Prescription without laboratory results
+- Discharge summary without laboratory report data
+- Doctor notes
+- General medical information
+- Hospital information
+- Unrelated PDF
+- Any document that does not actually contain laboratory
+  test results
+
+============================================================
+IMPORTANT
+============================================================
+
+Use ONLY the uploaded document text.
+
+Do NOT use outside knowledge.
+
+Do NOT perform blood report analysis.
+
+Do NOT diagnose anything.
+
+Return ONLY one of these exact values:
+
+BLOOD_REPORT
+
+or
+
+NOT_BLOOD_REPORT
+"""
+
+
+def classify_blood_report_document(
+    report_text: str,
+) -> str:
+
+    if not report_text:
+
+        return "NOT_BLOOD_REPORT"
+
+    prompt = f"""
+{BLOOD_REPORT_CLASSIFICATION_PROMPT}
+
+============================================================
+UPLOADED DOCUMENT TEXT
+============================================================
+
+{report_text}
+
+============================================================
+END DOCUMENT
+============================================================
+
+Return ONLY:
+
+BLOOD_REPORT
+
+or
+
+NOT_BLOOD_REPORT
+"""
+
+    try:
+
+        response = report_llm.invoke(
+            [
+                HumanMessage(
+                    content=prompt
+                )
+            ]
+        )
+
+        classification = str(
+            response.content
+        ).strip().upper()
+
+        # Remove accidental markdown/code formatting
+        classification = re.sub(
+            r"[^A-Z_]",
+            "",
+            classification,
+        )
+
+        if classification == "BLOOD_REPORT":
+
+            return "BLOOD_REPORT"
+
+        return "NOT_BLOOD_REPORT"
+
+    except Exception as error:
+
+        print(
+            "BLOOD REPORT CLASSIFICATION ERROR:",
+            repr(error)
+        )
+
+        # Fail closed:
+        # If classifier cannot decide, do NOT analyze
+        # the document as a blood report.
+        return "NOT_BLOOD_REPORT"
+
 
 # ============================================================
 # DIGITAL PDF TEXT EXTRACTION
@@ -1423,6 +1589,39 @@ def analyze_blood_report(
         report_text = extract_digital_pdf_text(
             file_path
         )
+
+        # ====================================================
+        # CLASSIFY DOCUMENT USING BLOOD REPORT AGENT / LLM
+        # ====================================================
+
+        print(
+            "\nClassifying uploaded document..."
+        )
+
+        document_type = classify_blood_report_document(
+            report_text
+        )
+
+        print(
+            "DOCUMENT CLASSIFICATION:",
+            document_type
+        )
+
+        if document_type != "BLOOD_REPORT":
+
+            return (
+        "REPORT_ANALYSIS_ERROR: "
+        "I am sorry, but the uploaded document is not a "
+        "digital or text-based laboratory blood report.\n\n"
+        "Because the uploaded document does not contain "
+        "actual blood/laboratory test results, I cannot "
+        "perform a Blood Report Summary.\n\n"
+        "Please upload the correct digital laboratory "
+        "blood report."
+    )
+
+
+
 
         # ====================================================
         # LIMIT VERY LARGE REPORTS
