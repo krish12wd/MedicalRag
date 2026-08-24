@@ -4,6 +4,534 @@ const chatContainer = document.getElementById("chatContainer");
 const clearButton = document.getElementById("clearButton");
 const historyList = document.getElementById("historyList");
 
+// ============================================================
+// PROFILE MENU
+// ============================================================
+
+async function initProfileMenu() {
+
+    const onlineStatus =
+        document.querySelector(
+            ".online-status"
+        );
+
+    if (!onlineStatus) {
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                "/profile"
+            );
+
+        if (!response.ok) {
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        if (
+            !data.success ||
+            !data.user
+        ) {
+            return;
+        }
+
+        const user =
+            data.user;
+
+        const initial =
+            (
+                user.name ||
+                "U"
+            )
+            .trim()
+            .charAt(0)
+            .toUpperCase();
+
+        const wrapper =
+            document.createElement(
+                "div"
+            );
+
+        wrapper.className =
+            "profile-menu-wrapper";
+
+        wrapper.innerHTML = `
+
+            <button
+                type="button"
+                class="profile-avatar-button"
+                title="Account"
+            >
+                ${escapeHtml(initial)}
+            </button>
+
+            <div
+                class="profile-dropdown"
+            >
+
+                <button
+                    type="button"
+                    class="profile-menu-item"
+                    data-action="profile"
+                >
+                    <span>👤</span>
+                    <span>Profile</span>
+                </button>
+
+                <button
+                    type="button"
+                    class="profile-menu-item"
+                    data-action="bookings"
+                >
+                    <span>📅</span>
+                    <span>My Bookings</span>
+                </button>
+
+                <div class="profile-menu-divider"></div>
+
+                <button
+                    type="button"
+                    class="profile-menu-item logout"
+                    data-action="logout"
+                >
+                    <span>↪</span>
+                    <span>Logout</span>
+                </button>
+
+            </div>
+        `;
+
+        onlineStatus.replaceWith(
+            wrapper
+        );
+
+        const avatar =
+            wrapper.querySelector(
+                ".profile-avatar-button"
+            );
+
+        const dropdown =
+            wrapper.querySelector(
+                ".profile-dropdown"
+            );
+
+        avatar.addEventListener(
+            "click",
+            function (event) {
+
+                event.stopPropagation();
+
+                dropdown.classList.toggle(
+                    "show"
+                );
+            }
+        );
+
+        wrapper.querySelector(
+            '[data-action="profile"]'
+        ).addEventListener(
+            "click",
+            function () {
+
+                dropdown.classList.remove(
+                    "show"
+                );
+
+                localStorage.setItem(
+    "activeDashboard",
+    "profile"
+);
+
+openProfileDashboard(
+    user
+);
+            }
+        );
+
+        wrapper.querySelector(
+            '[data-action="bookings"]'
+        ).addEventListener(
+            "click",
+            function () {
+
+                dropdown.classList.remove(
+                    "show"
+                );
+
+                localStorage.setItem(
+    "activeDashboard",
+    "bookings"
+);
+
+openMyBookingsDashboard();
+            }
+        );
+
+        wrapper.querySelector(
+            '[data-action="logout"]'
+        ).addEventListener(
+            "click",
+            function () {
+
+                window.location.href =
+                    "/logout";
+            }
+        );
+
+        document.addEventListener(
+            "click",
+            function () {
+
+                dropdown.classList.remove(
+                    "show"
+                );
+            }
+        );
+
+    } catch (error) {
+
+        console.error(
+            "PROFILE MENU ERROR:",
+            error
+        );
+    }
+}
+
+// ============================================================
+// PROFILE DASHBOARD
+// ============================================================
+
+function openProfileDashboard(
+    user
+) {
+
+    const overlay =
+        document.createElement(
+            "div"
+        );
+
+    overlay.className =
+        "profile-dashboard-overlay";
+
+    overlay.innerHTML = `
+
+        <div class="profile-dashboard">
+
+            <div class="profile-dashboard-header">
+
+                <div>
+                    <h2>
+                        Profile
+                    </h2>
+
+                    <p>
+                        Manage your account
+                        information.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="profile-dashboard-close"
+                >
+                    ×
+                </button>
+
+            </div>
+
+            <div class="profile-dashboard-body">
+
+                <div class="profile-info-card">
+
+                    <div class="profile-large-avatar">
+                        ${escapeHtml(
+                            (
+                                user.name ||
+                                "U"
+                            )
+                            .charAt(0)
+                            .toUpperCase()
+                        )}
+                    </div>
+
+                    <div>
+
+                        <h3>
+                            ${escapeHtml(
+                                user.name
+                            )}
+                        </h3>
+
+                        <p>
+                            ${escapeHtml(
+                                user.email
+                            )}
+                        </p>
+
+                    </div>
+
+                </div>
+
+                <div class="password-card">
+
+                    <h3>
+                        Change Password
+                    </h3>
+
+                    <p>
+                        Enter your current password
+                        and choose a new password.
+                    </p>
+
+                    <form
+                        id="changePasswordForm"
+                        class="change-password-form"
+                    >
+
+                        <label>
+                            Old Password
+                        </label>
+
+                        <input
+                            type="password"
+                            id="oldPassword"
+                            required
+                        >
+
+                        <label>
+                            New Password
+                        </label>
+
+                        <input
+                            type="password"
+                            id="newPassword"
+                            required
+                        >
+
+                        <label>
+                            Re-enter New Password
+                        </label>
+
+                        <input
+                            type="password"
+                            id="confirmNewPassword"
+                            required
+                        >
+
+                        <button
+                            type="submit"
+                            class="profile-primary-button"
+                        >
+                            Change Password
+                        </button>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+        </div>
+    `;
+
+    document.body.appendChild(
+        overlay
+    );
+
+    overlay.querySelector(
+    ".profile-dashboard-close"
+).addEventListener(
+    "click",
+    function () {
+
+        overlay.remove();
+
+        localStorage.removeItem(
+            "activeDashboard"
+        );
+
+    }
+);
+
+    overlay.querySelector(
+        "#changePasswordForm"
+    ).addEventListener(
+        "submit",
+        async function (event) {
+
+            event.preventDefault();
+
+            const button =
+                this.querySelector(
+                    "button[type='submit']"
+                );
+
+            button.disabled =
+                true;
+
+            button.textContent =
+                "Changing...";
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/change-password",
+                        {
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body:
+                                JSON.stringify({
+
+                                    old_password:
+                                        document
+                                        .getElementById(
+                                            "oldPassword"
+                                        )
+                                        .value,
+
+                                    new_password:
+                                        document
+                                        .getElementById(
+                                            "newPassword"
+                                        )
+                                        .value,
+
+                                    confirm_password:
+                                        document
+                                        .getElementById(
+                                            "confirmNewPassword"
+                                        )
+                                        .value,
+                                })
+                        }
+                    );
+
+                const data =
+                    await response.json();
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data.error ||
+                        "Unable to change password."
+                    );
+                }
+
+                alert(
+                    "Password changed successfully. Please log in again."
+                );
+
+                window.location.href =
+                    "/login";
+
+            } catch (error) {
+
+                alert(
+                    error.message
+                );
+
+                button.disabled =
+                    false;
+
+                button.textContent =
+                    "Change Password";
+            }
+        }
+    );
+}
+
+
+// ============================================================
+// MY BOOKINGS DASHBOARD
+// ============================================================
+
+async function openMyBookingsDashboard() {
+
+    const overlay =
+        document.createElement(
+            "div"
+        );
+
+    overlay.className =
+        "profile-dashboard-overlay";
+
+    overlay.innerHTML = `
+
+        <div class="profile-dashboard bookings-dashboard">
+
+            <div class="profile-dashboard-header">
+
+                <div>
+                    <h2>
+                        My Bookings
+                    </h2>
+
+                    <p>
+                        View and manage your appointments.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="profile-dashboard-close"
+                >
+                    ×
+                </button>
+
+            </div>
+
+            <div
+                id="myBookingsContainer"
+                class="my-bookings-container"
+            >
+
+                <div class="appointment-loading">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">
+                        Loading bookings...
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    `;
+
+    document.body.appendChild(
+        overlay
+    );
+
+    overlay.querySelector(
+    ".profile-dashboard-close"
+).addEventListener(
+    "click",
+    function () {
+
+        overlay.remove();
+
+        localStorage.removeItem(
+            "activeDashboard"
+        );
+
+    }
+);
+
+    await loadMyBookings(
+        overlay
+    );
+}
+
 let currentConversationId =
     localStorage.getItem("currentConversationId");
 
@@ -237,11 +765,7 @@ function addMessage(
     }
 
     // ========================================================
-    // HOME REMEDY + YOGA BUTTONS
-    // ========================================================
-
-    // ========================================================
-    // HOME REMEDY + YOGA BUTTONS
+    // HOME REMEDY + YOGA + APPOINTMENT BUTTONS
     // ========================================================
 
     if (
@@ -255,6 +779,7 @@ function addMessage(
 
         suggestionContainer.className =
             "suggestion-buttons";
+
 
         // ----------------------------------------------------
         // HOME REMEDIES
@@ -322,10 +847,45 @@ function addMessage(
         );
 
 
+        // ----------------------------------------------------
+        // BOOK APPOINTMENT
+        // ----------------------------------------------------
+
+        const appointmentButton =
+            document.createElement("button");
+
+        appointmentButton.type =
+            "button";
+
+        appointmentButton.className =
+            "suggestion-button";
+
+        appointmentButton.textContent =
+            "📅 Book an Appointment";
+
+        appointmentButton.addEventListener(
+            "click",
+            function () {
+
+                openAppointmentBooking();
+
+            }
+        );
+
+        suggestionContainer.appendChild(
+            appointmentButton
+        );
+
+
+        // ----------------------------------------------------
+        // ADD ALL BUTTONS
+        // ----------------------------------------------------
+
         wrapper.appendChild(
             suggestionContainer
         );
     }
+
 
 
     // ========================================================
@@ -451,6 +1011,1992 @@ function scrollToBottom() {
         behavior: "smooth"
     });
 }
+
+
+function openAppointmentBooking() {
+
+    const modal =
+        document.createElement("div");
+
+    modal.className =
+        "appointment-modal-overlay";
+
+    modal.innerHTML = `
+        <div class="appointment-modal">
+
+            <div class="appointment-modal-header">
+
+                <div>
+                    <h2>Book an Appointment</h2>
+
+                    <p>
+                        Select a doctor and choose
+                        an available 30-minute slot.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="appointment-close"
+                >
+                    ×
+                </button>
+
+            </div>
+
+            <div
+    id="appointmentDoctorList"
+    class="appointment-doctor-list"
+>
+    <div class="appointment-loading">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">
+            Loading...
+        </div>
+    </div>
+</div>
+    `;
+
+    document.body.appendChild(
+        modal
+    );
+
+    modal.querySelector(
+        ".appointment-close"
+    ).addEventListener(
+        "click",
+        function () {
+
+            modal.remove();
+
+        }
+    );
+
+    loadAppointmentDoctors(
+        modal
+    );
+}
+
+
+
+
+
+async function loadAppointmentDoctors(
+    modal
+) {
+
+    const container =
+        modal.querySelector(
+            "#appointmentDoctorList"
+        );
+
+    try {
+
+        const response =
+            await fetch(
+                "/appointments/doctors",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        conversation_id:
+                            currentConversationId
+                    })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error ||
+                "Unable to find doctors."
+            );
+        }
+
+        container.innerHTML = "";
+
+        if (
+            !data.doctors ||
+            !data.doctors.length
+        ) {
+
+            container.innerHTML = `
+                <div class="appointment-empty">
+                    No relevant doctors found.
+                </div>
+            `;
+
+            return;
+        }
+
+        data.doctors.forEach(
+            function (doctor) {
+
+                const card =
+                    createDoctorCard(
+                        doctor,
+                        modal
+                    );
+
+                container.appendChild(
+                    card
+                );
+
+            }
+        );
+
+    } catch (error) {
+
+        console.error(
+            "DOCTOR LIST ERROR:",
+            error
+        );
+
+        container.innerHTML = `
+            <div class="appointment-empty">
+                Unable to find doctors.
+                Please try again.
+            </div>
+        `;
+    }
+}
+
+// ============================================================
+// LOAD MY BOOKINGS
+// ============================================================
+
+async function loadMyBookings(
+    overlay
+) {
+
+    const container =
+        overlay.querySelector(
+            "#myBookingsContainer"
+        );
+
+    try {
+
+        const response =
+            await fetch(
+                "/my-bookings"
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error ||
+                "Unable to load bookings."
+            );
+        }
+
+        if (
+            !data.bookings ||
+            !data.bookings.length
+        ) {
+
+            container.innerHTML = `
+
+                <div class="my-bookings-empty">
+
+                    <div>
+                        📅
+                    </div>
+
+                    <h3>
+                        No Bookings
+                    </h3>
+
+                    <p>
+                        You do not have any active
+                        appointments.
+                    </p>
+
+                </div>
+            `;
+
+            return;
+        }
+
+        container.innerHTML = "";
+
+        data.bookings.forEach(
+            function (booking) {
+
+                container.appendChild(
+                    createBookingCard(
+                        booking,
+                        overlay
+                    )
+                );
+
+            }
+        );
+
+    } catch (error) {
+
+        console.error(
+            "MY BOOKINGS ERROR:",
+            error
+        );
+
+        container.innerHTML = `
+
+            <div class="appointment-empty">
+                ${escapeHtml(
+                    error.message
+                )}
+            </div>
+        `;
+    }
+}
+
+// ============================================================
+// BOOKING CARD
+// ============================================================
+
+function createBookingCard(
+    booking,
+    overlay
+) {
+
+    const doctor =
+        booking.doctor;
+
+    const card =
+        document.createElement(
+            "div"
+        );
+
+    card.className =
+        "my-booking-card";
+
+    const date =
+        formatBookingDate(
+            booking.appointment_date
+        );
+
+    let actions = "";
+
+    if (booking.can_modify) {
+
+        actions = `
+
+            <div class="booking-card-actions">
+
+                <button
+                    type="button"
+                    class="booking-edit-button"
+                >
+                    Edit
+                </button>
+
+                <button
+                    type="button"
+                    class="booking-cancel-button"
+                >
+                    Cancel Booking
+                </button>
+
+            </div>
+        `;
+
+    } else {
+
+        actions = `
+
+            <div class="booking-unavailable-message">
+                Changes unavailable within 6 hours
+            </div>
+        `;
+    }
+
+    card.innerHTML = `
+
+        <div class="my-booking-main">
+
+            <div>
+
+                <h3>
+                    ${escapeHtml(
+                        doctor.name
+                    )}
+                </h3>
+
+                <div class="booking-specialization">
+                    ${escapeHtml(
+                        doctor.specialization
+                    )}
+                </div>
+
+                <div class="booking-rating">
+                    ★ ${doctor.rating}
+                    <span>
+                        (${doctor.reviews} reviews)
+                    </span>
+                </div>
+
+                <div class="booking-hospital">
+                    ${escapeHtml(
+                        doctor.hospital
+                    )}
+                </div>
+
+                <div class="booking-address">
+                    ${escapeHtml(
+                        doctor.address
+                    )}
+                </div>
+
+            </div>
+
+            <div class="booking-date-time">
+
+                <div>
+
+                    <span>
+                        Date
+                    </span>
+
+                    <strong>
+                        ${escapeHtml(
+                            date
+                        )}
+                    </strong>
+
+                </div>
+
+                <div>
+
+                    <span>
+                        Time
+                    </span>
+
+                    <strong>
+                        ${escapeHtml(
+                            booking.slot_time
+                        )}
+                    </strong>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        ${actions}
+    `;
+
+    if (booking.can_modify) {
+
+        card.querySelector(
+            ".booking-edit-button"
+        ).addEventListener(
+            "click",
+            function () {
+
+                openEditBooking(
+                    booking,
+                    overlay
+                );
+
+            }
+        );
+
+        card.querySelector(
+            ".booking-cancel-button"
+        ).addEventListener(
+            "click",
+            function () {
+
+                openCancelConfirmation(
+                    booking,
+                    overlay
+                );
+
+            }
+        );
+    }
+
+    return card;
+}
+
+function formatBookingDate(
+    dateString
+) {
+
+    const date =
+        new Date(
+            `${dateString}T00:00:00`
+        );
+
+    if (
+        Number.isNaN(
+            date.getTime()
+        )
+    ) {
+
+        return dateString;
+    }
+
+    return date.toLocaleDateString(
+        "en-IN",
+        {
+            day: "2-digit",
+            month: "short",
+            year: "numeric"
+        }
+    );
+}
+
+// ============================================================
+// EDIT BOOKING
+// ============================================================
+
+async function openEditBooking(
+    booking,
+    overlay
+) {
+
+    const editOverlay =
+        document.createElement(
+            "div"
+        );
+
+    editOverlay.className =
+        "edit-booking-overlay";
+
+    editOverlay.innerHTML = `
+
+        <div class="edit-booking-modal">
+
+            <div class="edit-booking-header">
+
+                <div>
+                    <h2>
+                        Edit Appointment
+                    </h2>
+
+                    <p>
+                        ${escapeHtml(
+                            booking.doctor.name
+                        )}
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="edit-booking-close"
+                >
+                    ×
+                </button>
+
+            </div>
+
+            <div
+                id="editSlotsContainer"
+                class="edit-slots-container"
+            >
+
+                <div class="appointment-loading">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">
+                        Loading available slots...
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    `;
+
+    document.body.appendChild(
+        editOverlay
+    );
+
+    editOverlay.querySelector(
+        ".edit-booking-close"
+    ).addEventListener(
+        "click",
+        function () {
+
+            editOverlay.remove();
+
+        }
+    );
+
+    await loadEditSlots(
+        booking,
+        editOverlay,
+        overlay
+    );
+}
+
+// ============================================================
+// LOAD EDIT SLOTS
+// ============================================================
+
+async function loadEditSlots(
+    booking,
+    editOverlay,
+    overlay
+) {
+
+    const container =
+        editOverlay.querySelector(
+            "#editSlotsContainer"
+        );
+
+    try {
+
+        const response =
+            await fetch(
+                "/appointments/edit-slots",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            appointment_id:
+                                booking.id
+                        })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error ||
+                "Unable to load slots."
+            );
+        }
+
+        container.innerHTML = `
+
+            <div class="edit-booking-info">
+
+                <span>
+                    Appointment Date
+                </span>
+
+                <strong>
+                    ${escapeHtml(
+                        formatBookingDate(
+                            data.date
+                        )
+                    )}
+                </strong>
+
+            </div>
+
+            <div class="edit-slots-title">
+                Available Slots
+            </div>
+
+            <div
+                class="edit-slot-grid"
+            ></div>
+
+            <button
+                type="button"
+                class="edit-confirm-button"
+                disabled
+            >
+                Update Appointment
+            </button>
+        `;
+
+        const grid =
+            container.querySelector(
+                ".edit-slot-grid"
+            );
+
+        const updateButton =
+            container.querySelector(
+                ".edit-confirm-button"
+            );
+
+        let selectedSlot =
+            null;
+
+        data.slots.forEach(
+            function (slot) {
+
+                const wrapper =
+                    document.createElement(
+                        "div"
+                    );
+
+                wrapper.className =
+                    "edit-slot-wrapper";
+
+                const button =
+                    document.createElement(
+                        "button"
+                    );
+
+                button.type =
+                    "button";
+
+                button.className =
+                    "edit-time-slot";
+
+                button.textContent =
+                    slot;
+
+                const isCurrent =
+                    slot ===
+                    data.current_slot;
+
+                const doctorBooked =
+                    data.booked_slots.includes(
+                        slot
+                    );
+
+                const userBooked =
+                    data.user_booked_slots[
+                        slot
+                    ];
+
+                if (isCurrent) {
+
+                    button.classList.add(
+                        "current-slot"
+                    );
+
+                    button.disabled =
+                        false;
+
+                    button.title =
+                        "Current appointment";
+
+                } else if (
+                    doctorBooked
+                ) {
+
+                    button.classList.add(
+                        "not-available"
+                    );
+
+                    button.disabled =
+                        true;
+
+                    button.title =
+                        "Already booked by someone else";
+
+                } else if (
+                    userBooked
+                ) {
+
+                    button.classList.add(
+                        "not-available"
+                    );
+
+                    button.disabled =
+                        true;
+
+                    button.title =
+                        `You already have an appointment with ${userBooked.doctor_name} at this time`;
+
+                } else {
+
+                    button.addEventListener(
+                        "click",
+                        function () {
+
+                            grid
+                                .querySelectorAll(
+                                    ".edit-time-slot.selected"
+                                )
+                                .forEach(
+                                    function (
+                                        item
+                                    ) {
+
+                                        item.classList.remove(
+                                            "selected"
+                                        );
+
+                                    }
+                                );
+
+                            button.classList.add(
+                                "selected"
+                            );
+
+                            selectedSlot =
+                                slot;
+
+                            updateButton.disabled =
+                                false;
+
+                        }
+                    );
+                }
+
+                wrapper.appendChild(
+                    button
+                );
+
+                if (
+                    isCurrent
+                ) {
+
+                    const status =
+                        document.createElement(
+                            "span"
+                        );
+
+                    status.className =
+                        "slot-status";
+
+                    status.textContent =
+                        "Current";
+
+                    wrapper.appendChild(
+                        status
+                    );
+                }
+
+                grid.appendChild(
+                    wrapper
+                );
+            }
+        );
+
+        updateButton.addEventListener(
+            "click",
+            async function () {
+
+                if (!selectedSlot) {
+                    return;
+                }
+
+                updateButton.disabled =
+                    true;
+
+                updateButton.textContent =
+                    "Updating...";
+
+                try {
+
+                    const response =
+                        await fetch(
+                            "/appointments/edit",
+                            {
+                                method: "POST",
+
+                                headers: {
+                                    "Content-Type":
+                                        "application/json"
+                                },
+
+                                body:
+                                    JSON.stringify({
+
+                                        appointment_id:
+                                            booking.id,
+
+                                        slot_time:
+                                            selectedSlot
+                                    })
+                            }
+                        );
+
+                    const result =
+                        await response.json();
+
+                    if (!response.ok) {
+
+                        throw new Error(
+                            result.error ||
+                            "Unable to update appointment."
+                        );
+                    }
+
+                    alert(
+                        "Appointment updated successfully."
+                    );
+
+                    editOverlay.remove();
+
+                    await loadMyBookings(
+                        overlay
+                    );
+
+                } catch (error) {
+
+                    alert(
+                        error.message
+                    );
+
+                    updateButton.disabled =
+                        false;
+
+                    updateButton.textContent =
+                        "Update Appointment";
+                }
+            }
+        );
+
+    } catch (error) {
+
+        container.innerHTML = `
+
+            <div class="appointment-empty">
+                ${escapeHtml(
+                    error.message
+                )}
+            </div>
+        `;
+    }
+}
+
+// ============================================================
+// CANCEL CONFIRMATION
+// ============================================================
+
+function openCancelConfirmation(
+    booking,
+    overlay
+) {
+
+    const confirmation =
+        document.createElement(
+            "div"
+        );
+
+    confirmation.className =
+        "cancel-confirm-overlay";
+
+    confirmation.innerHTML = `
+
+        <div class="cancel-confirm-card">
+
+            <div class="cancel-confirm-icon">
+                ?
+            </div>
+
+            <h3>
+                Are you sure?
+            </h3>
+
+            <p>
+                Do you want to cancel your
+                appointment with
+                <strong>
+                    ${escapeHtml(
+                        booking.doctor.name
+                    )}
+                </strong>
+                at
+                <strong>
+                    ${escapeHtml(
+                        booking.slot_time
+                    )}
+                </strong>?
+            </p>
+
+            <div class="cancel-confirm-actions">
+
+                <button
+                    type="button"
+                    class="cancel-no-button"
+                >
+                    No
+                </button>
+
+                <button
+                    type="button"
+                    class="cancel-yes-button"
+                >
+                    Yes, Cancel
+                </button>
+
+            </div>
+
+        </div>
+    `;
+
+    document.body.appendChild(
+        confirmation
+    );
+
+    confirmation.querySelector(
+        ".cancel-no-button"
+    ).addEventListener(
+        "click",
+        function () {
+
+            confirmation.remove();
+
+        }
+    );
+
+    confirmation.querySelector(
+        ".cancel-yes-button"
+    ).addEventListener(
+        "click",
+        async function () {
+
+            this.disabled =
+                true;
+
+            this.textContent =
+                "Cancelling...";
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/appointments/cancel",
+                        {
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body:
+                                JSON.stringify({
+                                    appointment_id:
+                                        booking.id
+                                })
+                        }
+                    );
+
+                const data =
+                    await response.json();
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data.error ||
+                        "Unable to cancel appointment."
+                    );
+                }
+
+                confirmation.remove();
+
+                await loadMyBookings(
+                    overlay
+                );
+
+            } catch (error) {
+
+                alert(
+                    error.message
+                );
+
+                this.disabled =
+                    false;
+
+                this.textContent =
+                    "Yes, Cancel";
+            }
+        }
+    );
+}
+
+function showDoctorDetails(
+    doctor,
+    modal
+) {
+
+    const container =
+        modal.querySelector(
+            "#appointmentDoctorList"
+        );
+
+    container.innerHTML = `
+
+        <div class="doctor-details-card">
+
+            <button
+                type="button"
+                class="doctor-details-back"
+            >
+                ← Back to Doctors
+            </button>
+
+            <div class="doctor-details-header">
+
+                <h2>
+                    ${escapeHtml(
+                        doctor.name
+                    )}
+                </h2>
+
+                <div class="doctor-details-specialization">
+                    ${escapeHtml(
+                        doctor.specialization
+                    )}
+                </div>
+
+            </div>
+
+            <div class="doctor-details-grid">
+
+                <div class="doctor-detail-item">
+
+                    <span>
+                        Experience
+                    </span>
+
+                    <strong>
+                        ${doctor.experience}
+                        years
+                    </strong>
+
+                </div>
+
+                <div class="doctor-detail-item">
+
+                    <span>
+                        Qualification
+                    </span>
+
+                    <strong>
+                        ${escapeHtml(
+                            doctor.qualification
+                        )}
+                    </strong>
+
+                </div>
+
+                <div class="doctor-detail-item">
+
+                    <span>
+                        Rating
+                    </span>
+
+                    <strong>
+                        ★ ${doctor.rating}
+                    </strong>
+
+                </div>
+
+                <div class="doctor-detail-item">
+
+                    <span>
+                        Reviews
+                    </span>
+
+                    <strong>
+                        ${doctor.reviews}
+                    </strong>
+
+                </div>
+
+                <div class="doctor-detail-item">
+
+                    <span>
+                        Hospital
+                    </span>
+
+                    <strong>
+                        ${escapeHtml(
+                            doctor.hospital
+                        )}
+                    </strong>
+
+                </div>
+
+                <div class="doctor-detail-item">
+
+                    <span>
+                        Address
+                    </span>
+
+                    <strong>
+                        ${escapeHtml(
+                            doctor.address
+                        )}
+                    </strong>
+
+                </div>
+
+                <div class="doctor-detail-item">
+
+                    <span>
+                        Phone
+                    </span>
+
+                    <strong>
+                        ${escapeHtml(
+                            doctor.phone
+                        )}
+                    </strong>
+
+                </div>
+
+                <div class="doctor-detail-item">
+
+                    <span>
+                        Email
+                    </span>
+
+                    <strong>
+                        ${escapeHtml(
+                            doctor.email
+                        )}
+                    </strong>
+
+                </div>
+
+            </div>
+
+            <button
+                type="button"
+                class="doctor-details-book-button"
+                ${
+                    doctor.already_booked
+                        ? "disabled"
+                        : ""
+                }
+            >
+                ${
+                    doctor.already_booked
+                        ? "Already Booked"
+                        : "Book Slot"
+                }
+            </button>
+
+        </div>
+    `;
+
+    container.querySelector(
+        ".doctor-details-back"
+    ).addEventListener(
+        "click",
+        function () {
+
+            loadAppointmentDoctors(
+                modal
+            );
+
+        }
+    );
+
+    const bookButton =
+        container.querySelector(
+            ".doctor-details-book-button"
+        );
+
+    if (
+        !doctor.already_booked
+    ) {
+
+        bookButton.addEventListener(
+            "click",
+            function () {
+
+                showDoctorSlots(
+                    doctor,
+                    modal
+                );
+
+            }
+        );
+    }
+}
+
+function createDoctorCard(
+    doctor,
+    modal
+) {
+
+    const card =
+        document.createElement("div");
+
+    card.className =
+        "doctor-card";
+
+    card.innerHTML = `
+
+        <div class="doctor-card-main">
+
+            <div class="doctor-info">
+
+                <h3>
+                    ${escapeHtml(
+                        doctor.name
+                    )}
+                </h3>
+
+                <div class="doctor-specialization">
+                    ${escapeHtml(
+                        doctor.specialization
+                    )}
+                </div>
+
+                <div class="doctor-rating">
+                    ★ ${doctor.rating}
+                    <span>
+                        (${doctor.reviews} reviews)
+                    </span>
+                </div>
+
+                <div class="doctor-hospital">
+                    ${escapeHtml(
+                        doctor.hospital
+                    )}
+                </div>
+
+                <div class="doctor-address">
+                    ${escapeHtml(
+                        doctor.address
+                    )}
+                </div>
+
+                <div class="doctor-experience">
+                    ${doctor.experience}
+                    years experience
+                </div>
+
+            </div>
+
+            <div class="doctor-actions">
+
+                <button
+                    type="button"
+                    class="doctor-view-button"
+                >
+                    View
+                </button>
+
+                <button
+                    type="button"
+                    class="doctor-book-button"
+                    ${
+                        doctor.already_booked
+                            ? "disabled"
+                            : ""
+                    }
+                >
+                    ${
+                        doctor.already_booked
+                            ? "Already Booked"
+                            : "Book Slot"
+                    }
+                </button>
+
+            </div>
+
+        </div>
+    `;
+
+    // ========================================================
+    // VIEW
+    // ========================================================
+
+    card.querySelector(
+        ".doctor-view-button"
+    ).addEventListener(
+        "click",
+        function () {
+
+            showDoctorDetails(
+                doctor,
+                modal
+            );
+
+        }
+    );
+
+    
+
+
+    // ========================================================
+    // BOOK SLOT
+    // ========================================================
+
+    const bookButton =
+        card.querySelector(
+            ".doctor-book-button"
+        );
+
+    if (
+        !doctor.already_booked
+    ) {
+
+        bookButton.addEventListener(
+            "click",
+            function () {
+
+                showDoctorSlots(
+                    doctor,
+                    modal
+                );
+
+            }
+        );
+
+    }
+
+    return card;
+}
+
+
+async function showDoctorSlots(
+    doctor,
+    modal
+) {
+
+    const container =
+        modal.querySelector(
+            "#appointmentDoctorList"
+        );
+
+    container.innerHTML = `
+
+        <div class="slot-booking-header">
+
+            <button
+                type="button"
+                class="back-to-doctors"
+            >
+                ← Back
+            </button>
+
+            <div class="slot-doctor-summary">
+
+                <h3>
+                    ${escapeHtml(
+                        doctor.name
+                    )}
+                </h3>
+
+                <div class="slot-doctor-specialization">
+                    ${escapeHtml(
+                        doctor.specialization
+                    )}
+                </div>
+
+                <div class="slot-doctor-rating">
+                    ★ ${doctor.rating}
+
+                    <span>
+                        (${doctor.reviews} reviews)
+                    </span>
+                </div>
+
+                <div class="slot-doctor-hospital">
+                    ${escapeHtml(
+                        doctor.hospital
+                    )}
+                </div>
+
+                <div class="slot-doctor-address">
+                    ${escapeHtml(
+                        doctor.address
+                    )}
+                </div>
+
+                <div class="slot-doctor-experience">
+                    ${doctor.experience}
+                    years experience
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="slot-date-section">
+
+            <label>
+                Appointment Date
+            </label>
+
+            <input
+                type="date"
+                id="appointmentDate"
+                class="appointment-date-input"
+            >
+
+        </div>
+
+        <div
+            id="availableSlots"
+            class="available-slots"
+        >
+            Select a date to view available slots.
+        </div>
+    `;
+
+    const dateInput =
+        container.querySelector(
+            "#appointmentDate"
+        );
+
+    const today =
+        new Date();
+
+    const year =
+        today.getFullYear();
+
+    const month =
+        String(
+            today.getMonth() + 1
+        ).padStart(
+            2,
+            "0"
+        );
+
+    const day =
+        String(
+            today.getDate()
+        ).padStart(
+            2,
+            "0"
+        );
+
+    dateInput.min =
+        `${year}-${month}-${day}`;
+
+    dateInput.addEventListener(
+        "change",
+        function () {
+
+            loadAvailableSlots(
+                doctor,
+                dateInput.value,
+                container
+            );
+
+        }
+    );
+
+    container.querySelector(
+        ".back-to-doctors"
+    ).addEventListener(
+        "click",
+        function () {
+
+            loadAppointmentDoctors(
+                modal
+            );
+
+        }
+    );
+}
+
+
+async function loadAvailableSlots(
+    doctor,
+    date,
+    container
+) {
+
+    const slotsContainer =
+        container.querySelector(
+            "#availableSlots"
+        );
+
+    if (!date) {
+
+        slotsContainer.innerHTML =
+            "Select a date to view available slots.";
+
+        return;
+    }
+
+    slotsContainer.innerHTML = `
+        <div class="appointment-loading">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">
+                Loading...
+            </div>
+        </div>
+    `;
+
+    try {
+
+        const response =
+            await fetch(
+                "/appointments/slots",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+
+                        doctor_id:
+                            doctor.id,
+
+                        date:
+                            date
+                    })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error ||
+                "Unable to load slots."
+            );
+        }
+
+        // ====================================================
+        // SAME DOCTOR ALREADY BOOKED
+        // ====================================================
+
+        if (
+            data.doctor_already_booked
+        ) {
+
+            slotsContainer.innerHTML = `
+
+                <div class="doctor-already-booked">
+
+                    <div class="doctor-already-booked-icon">
+                        ✓
+                    </div>
+
+                    <strong>
+                        Appointment Already Booked
+                    </strong>
+
+                    <span>
+                        You already have an appointment
+                        with ${escapeHtml(
+                            doctor.name
+                        )}.
+                    </span>
+
+                </div>
+            `;
+
+            return;
+        }
+
+        const slots =
+            data.slots || [];
+
+        if (!slots.length) {
+
+            slotsContainer.innerHTML = `
+                <div class="appointment-empty">
+                    No slots available for this date.
+                </div>
+            `;
+
+            return;
+        }
+
+        const bookedSlots =
+            new Set(
+                data.booked_slots || []
+            );
+
+        const userBookedSlots =
+            data.user_booked_slots || {};
+
+        slotsContainer.innerHTML = `
+
+            <div class="slots-title">
+                Available Slots
+            </div>
+
+            <div class="slot-grid"></div>
+
+            <button
+                type="button"
+                class="confirm-slot-button"
+                disabled
+            >
+                Confirm Booking
+            </button>
+        `;
+
+        const slotGrid =
+            slotsContainer.querySelector(
+                ".slot-grid"
+            );
+
+        const confirmButton =
+            slotsContainer.querySelector(
+                ".confirm-slot-button"
+            );
+
+        let selectedSlot =
+            null;
+
+        slots.forEach(
+            function (slot) {
+
+                const wrapper =
+                    document.createElement(
+                        "div"
+                    );
+
+                wrapper.className =
+                    "time-slot-wrapper";
+
+                const button =
+                    document.createElement(
+                        "button"
+                    );
+
+                button.type =
+                    "button";
+
+                button.className =
+                    "time-slot";
+
+                button.textContent =
+                    slot;
+
+                // =================================================
+                // SLOT BOOKED FOR THIS DOCTOR
+                // =================================================
+
+                if (
+                    bookedSlots.has(
+                        slot
+                    )
+                ) {
+
+                    button.classList.add(
+                        "booked"
+                    );
+
+                    button.disabled =
+                        true;
+
+                    const label =
+                        document.createElement(
+                            "span"
+                        );
+
+                    label.className =
+                        "slot-status";
+
+                    label.textContent =
+                        "Not Available";
+
+                    wrapper.appendChild(
+                        button
+                    );
+
+                    wrapper.appendChild(
+                        label
+                    );
+
+                    slotGrid.appendChild(
+                        wrapper
+                    );
+
+                    return;
+                }
+
+                // =================================================
+                // USER HAS SAME TIME WITH ANOTHER DOCTOR
+                // =================================================
+
+                const userBooking =
+                    userBookedSlots[
+                        slot
+                    ];
+
+                if (
+                    userBooking &&
+                    userBooking.doctor_id
+                    !== doctor.id
+                ) {
+
+                    button.classList.add(
+                        "conflict"
+                    );
+
+                    button.disabled =
+                        true;
+
+                    button.title =
+                        "This time slot is already booked with " +
+                        userBooking.doctor_name;
+
+                    const label =
+                        document.createElement(
+                            "span"
+                        );
+
+                    label.className =
+                        "slot-status conflict-text";
+
+                    label.textContent =
+                        "Not Available";
+
+                    wrapper.appendChild(
+                        button
+                    );
+
+                    wrapper.appendChild(
+                        label
+                    );
+
+                    slotGrid.appendChild(
+                        wrapper
+                    );
+
+                    return;
+                }
+
+                // =================================================
+                // AVAILABLE SLOT
+                // =================================================
+
+                button.addEventListener(
+                    "click",
+                    function () {
+
+                        slotGrid
+                            .querySelectorAll(
+                                ".time-slot.selected"
+                            )
+                            .forEach(
+                                function (
+                                    item
+                                ) {
+
+                                    item.classList.remove(
+                                        "selected"
+                                    );
+
+                                }
+                            );
+
+                        button.classList.add(
+                            "selected"
+                        );
+
+                        selectedSlot =
+                            slot;
+
+                        confirmButton.disabled =
+                            false;
+
+                    }
+                );
+
+                wrapper.appendChild(
+                    button
+                );
+
+                slotGrid.appendChild(
+                    wrapper
+                );
+
+            }
+        );
+
+        confirmButton.addEventListener(
+            "click",
+            async function () {
+
+                if (
+                    !selectedSlot
+                ) {
+
+                    return;
+                }
+
+                await confirmAppointment(
+                    doctor,
+                    date,
+                    selectedSlot,
+                    confirmButton,
+                    container
+                );
+
+            }
+        );
+
+    } catch (error) {
+
+        console.error(
+            "SLOT ERROR:",
+            error
+        );
+
+        slotsContainer.innerHTML = `
+            <div class="appointment-empty">
+                Unable to load available slots.
+            </div>
+        `;
+    }
+}
+
+
+
+
+async function confirmAppointment(
+    doctor,
+    date,
+    slot,
+    button,
+    container
+) {
+
+    button.disabled =
+        true;
+
+    button.textContent =
+        "Booking...";
+
+    try {
+
+        const response =
+            await fetch(
+                "/appointments/book",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+
+                        doctor_id:
+                            doctor.id,
+
+                        date:
+                            date,
+
+                        slot_time:
+                            slot,
+
+                        conversation_id:
+                            currentConversationId
+                    })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error ||
+                "Unable to book appointment."
+            );
+        }
+
+        container.innerHTML = `
+
+            <div class="booking-success">
+
+                <div class="booking-success-icon">
+                    ✓
+                </div>
+
+                <h3>
+                    Appointment Booked
+                </h3>
+
+                <p>
+                    Your appointment with
+                    <strong>
+                        ${escapeHtml(doctor.name)}
+                    </strong>
+                    is confirmed.
+                </p>
+
+                <div class="booking-details">
+
+                    <div>
+                        <span>Date</span>
+                        <strong>${date}</strong>
+                    </div>
+
+                    <div>
+                        <span>Time</span>
+                        <strong>${slot}</strong>
+                    </div>
+
+                </div>
+
+                <button
+                    type="button"
+                    class="appointment-done-button"
+                >
+                    Done
+                </button>
+
+            </div>
+        `;
+
+        container.querySelector(
+            ".appointment-done-button"
+        ).addEventListener(
+            "click",
+            function () {
+
+                const modal =
+                    container.closest(
+                        ".appointment-modal-overlay"
+                    );
+
+                if (modal) {
+                    modal.remove();
+                }
+
+            }
+        );
+
+    } catch (error) {
+
+        alert(
+            error.message
+        );
+
+        button.disabled =
+            false;
+
+        button.textContent =
+            "Confirm Booking";
+    }
+}
+
+
+
+
+
+
+
+
+
+
 
 
 // ============================================================
@@ -1260,8 +3806,41 @@ async function openConversation(
         chatContainer.innerHTML =
             "";
 
+        // ====================================================
+        // FIND LAST ASSISTANT MESSAGE
+        // ====================================================
+
+        const lastAssistantIndex =
+            data.messages.reduce(
+                function (
+                    lastIndex,
+                    message,
+                    index
+                ) {
+
+                    if (
+                        message.role ===
+                        "assistant"
+                    ) {
+
+                        return index;
+                    }
+
+                    return lastIndex;
+
+                },
+                -1
+            );
+
+        // ====================================================
+        // RESTORE CONVERSATION
+        // ====================================================
+
         data.messages.forEach(
-            function (message) {
+            function (
+                message,
+                index
+            ) {
 
                 addMessage(
 
@@ -1273,7 +3852,14 @@ async function openConversation(
 
                     message.created_at ||
                     message.timestamp ||
-                    null
+                    null,
+
+                    // Show buttons ONLY on the
+                    // last assistant response
+                    message.role ===
+                        "assistant" &&
+                    index ===
+                        lastAssistantIndex
                 );
             }
         );
@@ -1501,6 +4087,8 @@ async function initializeApp() {
 
     await loadHistory();
 
+    initProfileMenu();
+
     const savedConversationId =
         localStorage.getItem(
             "currentConversationId"
@@ -1512,8 +4100,68 @@ async function initializeApp() {
             savedConversationId
         );
     }
-}
 
+    // ========================================================
+    // RESTORE ACTIVE DASHBOARD AFTER REFRESH
+    // ========================================================
+
+    const activeDashboard =
+        localStorage.getItem(
+            "activeDashboard"
+        );
+
+    if (
+        activeDashboard === "profile"
+    ) {
+
+        try {
+
+            const response =
+                await fetch(
+                    "/profile"
+                );
+
+            if (response.ok) {
+
+                const data =
+                    await response.json();
+
+                if (
+                    data.success &&
+                    data.user
+                ) {
+
+                    openProfileDashboard(
+                        data.user
+                    );
+                }
+            }
+
+        } catch (error) {
+
+            console.error(
+                "PROFILE RESTORE ERROR:",
+                error
+            );
+        }
+
+    } else if (
+        activeDashboard === "bookings"
+    ) {
+
+        try {
+
+            await openMyBookingsDashboard();
+
+        } catch (error) {
+
+            console.error(
+                "BOOKINGS RESTORE ERROR:",
+                error
+            );
+        }
+    }
+}
 
 
 // ============================================================
@@ -1750,6 +4398,52 @@ function addBloodReportResult(content) {
         time
     );
 
+
+// ========================================================
+// BOOK APPOINTMENT BUTTON
+// ========================================================
+
+if (currentConversationId) {
+
+    const appointmentContainer =
+        document.createElement("div");
+
+    appointmentContainer.className =
+        "suggestion-buttons";
+
+
+    const appointmentButton =
+        document.createElement("button");
+
+    appointmentButton.type =
+        "button";
+
+    appointmentButton.className =
+        "suggestion-button";
+
+    appointmentButton.textContent =
+        "📅 Book an Appointment";
+
+
+    appointmentButton.addEventListener(
+        "click",
+        function () {
+
+            openAppointmentBooking();
+
+        }
+    );
+
+
+    appointmentContainer.appendChild(
+        appointmentButton
+    );
+
+
+    wrapper.appendChild(
+        appointmentContainer
+    );
+}
 
     // ========================================================
     // MESSAGE POSITION
@@ -2018,5 +4712,33 @@ async function uploadBloodReport(
     }
 }
 
+function escapeHtml(
+    value
+) {
+
+    return String(
+        value ?? ""
+    )
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+        .replace(
+            /</g,
+            "&lt;"
+        )
+        .replace(
+            />/g,
+            "&gt;"
+        )
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+}
 
 initializeApp();

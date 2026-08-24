@@ -5,10 +5,16 @@ import sqlite3
 import uuid
 from pathlib import Path
 import tempfile
-
+from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
+from doctors import DOCTORS
 from werkzeug.utils import secure_filename
+from langchain_openai import ChatOpenAI
+import smtplib
+import threading
+import time
 
-from datetime import datetime
+from email.message import EmailMessage
 from functools import wraps
 
 from dotenv import load_dotenv
@@ -79,6 +85,35 @@ app.secret_key = os.getenv(
 
 DATABASE = "app.db"
 
+# ============================================================
+# EMAIL CONFIGURATION
+# ============================================================
+
+SMTP_HOST = os.getenv(
+    "SMTP_HOST",
+    "smtp.gmail.com"
+)
+
+SMTP_PORT = int(
+    os.getenv(
+        "SMTP_PORT",
+        "587"
+    )
+)
+
+SMTP_USERNAME = os.getenv(
+    "SMTP_USERNAME"
+)
+
+SMTP_PASSWORD = os.getenv(
+    "SMTP_PASSWORD"
+)
+
+SMTP_FROM = os.getenv(
+    "SMTP_FROM",
+    SMTP_USERNAME
+)
+
 QWEN_API_KEY = os.getenv(
     "QWEN_API_KEY"
 )
@@ -90,7 +125,7 @@ QWEN_BASE_URL = os.getenv(
 
 QWEN_MODEL = os.getenv(
     "QWEN_MODEL",
-    "qwen-plus",
+    "qwen-plus-character",
 )
 
 if not QWEN_API_KEY:
@@ -235,6 +270,395 @@ def get_db():
 
 
 # ============================================================
+# SEND EMAIL
+# ============================================================
+
+def send_email(
+    recipient,
+    subject,
+    body
+):
+
+    if not SMTP_USERNAME or not SMTP_PASSWORD:
+        print(
+            "EMAIL ERROR: SMTP credentials are not configured."
+        )
+        return False
+
+    try:
+
+        message = EmailMessage()
+
+        message["From"] = SMTP_FROM
+        message["To"] = recipient
+        message["Subject"] = subject
+
+        message.set_content(
+            body
+        )
+
+        with smtplib.SMTP(
+            SMTP_HOST,
+            SMTP_PORT,
+            timeout=20
+        ) as server:
+
+            server.starttls()
+
+            server.login(
+                SMTP_USERNAME,
+                SMTP_PASSWORD
+            )
+
+            server.send_message(
+                message
+            )
+
+        print(
+            f"EMAIL SENT: {recipient} | {subject}"
+        )
+
+        return True
+
+    except Exception as error:
+
+        print(
+            "EMAIL ERROR:",
+            repr(error)
+        )
+
+        return False
+
+
+# ============================================================
+# APPOINTMENT EMAIL HELPERS
+# ============================================================
+
+def send_booking_confirmation_email(
+    user,
+    doctor,
+    appointment_date,
+    slot_time
+):
+
+    subject = (
+        "MediGuide - Appointment Confirmed"
+    )
+
+    body = f"""
+Hello {user["name"]},
+
+Your appointment has been successfully booked with MediGuide.
+
+Appointment Details
+-------------------
+
+Doctor: {doctor["name"]}
+Specialization: {doctor["specialization"]}
+Hospital: {doctor["hospital"]}
+Address: {doctor["address"]}
+
+Date: {appointment_date}
+Time: {slot_time}
+
+Please arrive a few minutes before your appointment.
+
+Thank you for using MediGuide.
+
+MediGuide Team
+"""
+
+    return send_email(
+        user["email"],
+        subject,
+        body.strip()
+    )
+
+
+def send_cancellation_email(
+    user,
+    doctor,
+    appointment_date,
+    slot_time
+):
+
+    subject = (
+        "MediGuide - Appointment Cancelled"
+    )
+
+    body = f"""
+Hello {user["name"]},
+
+Your MediGuide appointment has been successfully cancelled.
+
+Cancelled Appointment
+---------------------
+
+Doctor: {doctor["name"]}
+Specialization: {doctor["specialization"]}
+Hospital: {doctor["hospital"]}
+
+Date: {appointment_date}
+Time: {slot_time}
+
+If you need another appointment, you can book a new slot anytime.
+
+MediGuide Team
+"""
+
+    return send_email(
+        user["email"],
+        subject,
+        body.strip()
+    )
+
+
+def send_appointment_reminder_email(
+    user,
+    doctor,
+    appointment_date,
+    slot_time,
+    reminder_type
+):
+
+    if reminder_type == "24h":
+
+        subject = (
+            "MediGuide - Appointment Tomorrow"
+        )
+
+        heading = (
+            "Your appointment is tomorrow."
+        )
+
+    else:
+
+        subject = (
+            "MediGuide - Appointment in 1 Hour"
+        )
+
+        heading = (
+            "Your appointment is in 1 hour."
+        )
+
+    body = f"""
+Hello {user["name"]},
+
+{heading}
+
+Appointment Details
+-------------------
+
+Doctor: {doctor["name"]}
+Specialization: {doctor["specialization"]}
+Hospital: {doctor["hospital"]}
+Address: {doctor["address"]}
+
+Date: {appointment_date}
+Time: {slot_time}
+
+Please make sure you are ready for your appointment.
+
+MediGuide Team
+"""
+
+    return send_email(
+        user["email"],
+        subject,
+        body.strip()
+    )
+
+
+# ============================================================
+# APPOINTMENT REMINDER WORKER
+# ============================================================
+
+def appointment_reminder_worker():
+
+    while True:
+
+        connection = None
+
+        try:
+
+            now = datetime.now(IST)
+
+            connection = get_db()
+
+            appointments = connection.execute(
+                """
+                SELECT
+                    id,
+                    user_id,
+                    doctor_id,
+                    appointment_date,
+                    slot_time,
+                    reminder_24h_sent,
+                    reminder_1h_sent
+                FROM appointments
+                WHERE status = 'booked'
+                """
+            ).fetchall()
+
+            for appointment in appointments:
+
+                try:
+
+                    appointment_datetime = (
+                        get_appointment_datetime(
+                            appointment["appointment_date"],
+                            appointment["slot_time"]
+                        )
+                    )
+
+                    remaining = (
+                        appointment_datetime - now
+                    )
+
+                    # ====================================================
+                    # 24 HOUR REMINDER
+                    #
+                    # Send once when appointment is within 24 hours
+                    # but still more than 1 hour away.
+                    # ====================================================
+
+                    if (
+                        appointment["reminder_24h_sent"] == 0
+                        and timedelta(hours=1)
+                        < remaining
+                        <= timedelta(hours=24)
+                    ):
+
+                        user = connection.execute(
+                            """
+                            SELECT
+                                name,
+                                email
+                            FROM users
+                            WHERE id = ?
+                            """,
+                            (
+                                appointment["user_id"],
+                            ),
+                        ).fetchone()
+
+                        doctor = get_doctor_by_id(
+                            appointment["doctor_id"]
+                        )
+
+                        if user and doctor:
+
+                            email_sent = (
+                                send_appointment_reminder_email(
+                                    user,
+                                    doctor,
+                                    appointment["appointment_date"],
+                                    appointment["slot_time"],
+                                    "24h",
+                                )
+                            )
+
+                            # Mark as sent ONLY if email was
+                            # successfully delivered.
+                            if email_sent:
+
+                                connection.execute(
+                                    """
+                                    UPDATE appointments
+                                    SET reminder_24h_sent = 1
+                                    WHERE id = ?
+                                    """,
+                                    (
+                                        appointment["id"],
+                                    ),
+                                )
+
+                                connection.commit()
+
+                    # ====================================================
+                    # 1 HOUR REMINDER
+                    #
+                    # Send once when appointment is within 1 hour.
+                    # ====================================================
+
+                    if (
+                        appointment["reminder_1h_sent"] == 0
+                        and timedelta(0)
+                        < remaining
+                        <= timedelta(hours=1)
+                    ):
+
+                        user = connection.execute(
+                            """
+                            SELECT
+                                name,
+                                email
+                            FROM users
+                            WHERE id = ?
+                            """,
+                            (
+                                appointment["user_id"],
+                            ),
+                        ).fetchone()
+
+                        doctor = get_doctor_by_id(
+                            appointment["doctor_id"]
+                        )
+
+                        if user and doctor:
+
+                            email_sent = (
+                                send_appointment_reminder_email(
+                                    user,
+                                    doctor,
+                                    appointment["appointment_date"],
+                                    appointment["slot_time"],
+                                    "1h",
+                                )
+                            )
+
+                            # Mark as sent ONLY if email was
+                            # successfully delivered.
+                            if email_sent:
+
+                                connection.execute(
+                                    """
+                                    UPDATE appointments
+                                    SET reminder_1h_sent = 1
+                                    WHERE id = ?
+                                    """,
+                                    (
+                                        appointment["id"],
+                                    ),
+                                )
+
+                                connection.commit()
+
+                except Exception as appointment_error:
+
+                    print(
+                        "REMINDER APPOINTMENT ERROR:",
+                        repr(appointment_error)
+                    )
+
+        except Exception as worker_error:
+
+            print(
+                "REMINDER WORKER ERROR:",
+                repr(worker_error)
+            )
+
+        finally:
+
+            if connection:
+
+                connection.close()
+
+        # Check every minute.
+        time.sleep(60)
+
+
+# ============================================================
 # SAVE ASSISTANT MESSAGE
 # ============================================================
 
@@ -305,6 +729,158 @@ def save_suggestion_message(
     connection.commit()
 
 
+def identify_required_specializations(
+    conversation_messages
+):
+
+    conversation_text = "\n".join(
+        [
+            f"{message['role']}: {message['content']}"
+            for message in conversation_messages
+        ]
+    )
+
+    prompt = f"""
+You are a medical appointment routing assistant.
+
+Your job is ONLY to identify which doctor specialization
+is appropriate for the patient's current medical problem.
+
+Do NOT diagnose the patient.
+Do NOT provide treatment.
+Do NOT provide medicine.
+Do NOT provide medical advice.
+
+Use the complete conversation.
+
+Available doctor specializations:
+
+- General Physician
+- Cardiologist
+- Dermatologist
+- Orthopedic Surgeon
+- Gynecologist
+- Neurologist
+- Pediatrician
+- Gastroenterologist
+- Psychiatrist
+- Pulmonologist
+- Endocrinologist
+- Nephrologist
+- Ophthalmologist
+- ENT Specialist
+
+Rules:
+
+1. Return ONLY a comma-separated list.
+2. Return only specializations from the available list.
+3. Prefer the most directly relevant specialist.
+4. Use General Physician when the problem is general,
+   unclear, or does not clearly require a specialist.
+5. You may return more than one specialization only when
+   the conversation clearly involves multiple medical areas.
+6. Never return all specializations.
+7. Do not invent a specialization.
+
+Conversation:
+
+{conversation_text}
+
+Required specializations:
+"""
+
+    response = title_llm.invoke(
+        prompt
+    )
+
+    raw = str(
+        response.content
+    ).strip()
+
+    allowed_specializations = {
+        doctor["specialization"]
+        for doctor in DOCTORS
+    }
+
+    requested = []
+
+    for item in raw.split(","):
+
+        specialization = item.strip()
+
+        if specialization in allowed_specializations:
+
+            if specialization not in requested:
+
+                requested.append(
+                    specialization
+                )
+
+    if not requested:
+
+        requested = [
+            "General Physician"
+        ]
+
+    return requested
+
+
+def generate_doctor_slots(
+    doctor,
+    appointment_date
+):
+
+    timings = doctor.get(
+        "timings",
+        ""
+    )
+
+    match = re.search(
+        r"(\d{1,2}:\d{2}\s*[AP]M)"
+        r"\s*-\s*"
+        r"(\d{1,2}:\d{2}\s*[AP]M)",
+        timings,
+        re.IGNORECASE,
+    )
+
+    if not match:
+
+        return []
+
+    start_text = match.group(1)
+    end_text = match.group(2)
+
+    start = datetime.strptime(
+        start_text.upper(),
+        "%I:%M %p"
+    )
+
+    end = datetime.strptime(
+        end_text.upper(),
+        "%I:%M %p"
+    )
+
+    slots = []
+
+    current = start
+
+    while current + timedelta(
+        minutes=30
+    ) <= end:
+
+        slots.append(
+            current.strftime(
+                "%I:%M %p"
+            )
+        )
+
+        current += timedelta(
+            minutes=30
+        )
+
+    return slots
+
+
 # ============================================================
 # INITIALIZE DATABASE
 # ============================================================
@@ -359,6 +935,46 @@ def init_db():
         """
     )
 
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS appointments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            user_id INTEGER NOT NULL,
+
+            conversation_id TEXT,
+
+            doctor_id INTEGER NOT NULL,
+
+            appointment_date TEXT NOT NULL,
+
+            slot_time TEXT NOT NULL,
+
+            status TEXT NOT NULL DEFAULT 'booked',
+
+            created_at TEXT NOT NULL,
+
+            reminder_24h_sent INTEGER NOT NULL DEFAULT 0,
+
+            reminder_1h_sent INTEGER NOT NULL DEFAULT 0,
+
+            FOREIGN KEY(user_id)
+            REFERENCES users(id)
+            ON DELETE CASCADE,
+
+            FOREIGN KEY(conversation_id)
+            REFERENCES conversations(id)
+            ON DELETE SET NULL,
+
+            UNIQUE(
+                doctor_id,
+                appointment_date,
+                slot_time
+            )
+        )
+        """
+    )
+
     connection.commit()
 
     connection.close()
@@ -385,6 +1001,77 @@ def login_required(function):
         )
 
     return wrapper
+
+
+# ============================================================
+# APPOINTMENT TIME HELPERS
+# ============================================================
+
+IST = ZoneInfo("Asia/Kolkata")
+
+
+def get_appointment_datetime(
+    appointment_date,
+    slot_time
+):
+
+    return datetime.strptime(
+        f"{appointment_date} {slot_time}",
+        "%Y-%m-%d %I:%M %p"
+    ).replace(
+        tzinfo=IST
+    )
+
+
+def appointment_changes_allowed(
+    appointment_date,
+    slot_time
+):
+
+    appointment_datetime = (
+        get_appointment_datetime(
+            appointment_date,
+            slot_time
+        )
+    )
+
+    now = datetime.now(IST)
+
+    remaining = (
+        appointment_datetime - now
+    )
+
+    return (
+        remaining.total_seconds()
+        >= 6 * 60 * 60
+    )
+
+
+def get_doctor_by_id(
+    doctor_id
+):
+
+    try:
+
+        doctor_id = int(
+            doctor_id
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
+
+        return None
+
+    return next(
+        (
+            doctor
+            for doctor in DOCTORS
+            if doctor["id"] == doctor_id
+        ),
+        None
+    )
 
 
 # ============================================================
@@ -686,6 +1373,1551 @@ def login():
     )
 
 
+@app.route(
+    "/appointments/doctors",
+    methods=["POST"]
+)
+@login_required
+def appointment_doctors():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Invalid request data."
+        }), 400
+
+    conversation_id = data.get(
+        "conversation_id"
+    )
+
+    if not conversation_id:
+
+        return jsonify({
+            "error":
+                "Conversation ID is required."
+        }), 400
+
+    user_id = session["user_id"]
+
+    connection = get_db()
+
+    try:
+
+        # ====================================================
+        # VERIFY CONVERSATION BELONGS TO CURRENT USER
+        # ====================================================
+
+        conversation = connection.execute(
+            """
+            SELECT id
+            FROM conversations
+            WHERE id = ?
+            AND user_id = ?
+            """,
+            (
+                conversation_id,
+                user_id,
+            ),
+        ).fetchone()
+
+        if not conversation:
+
+            return jsonify({
+                "error":
+                    "Conversation not found."
+            }), 404
+
+        # ====================================================
+        # GET FULL CONVERSATION
+        # ====================================================
+
+        rows = connection.execute(
+            """
+            SELECT role, content
+            FROM messages
+            WHERE conversation_id = ?
+            ORDER BY id ASC
+            """,
+            (
+                conversation_id,
+            ),
+        ).fetchall()
+
+        if not rows:
+
+            return jsonify({
+                "error":
+                    "No medical conversation found."
+            }), 400
+
+        conversation_messages = []
+
+        for row in rows:
+
+            conversation_messages.append({
+                "role":
+                    row["role"],
+
+                "content":
+                    row["content"],
+            })
+
+        # ====================================================
+        # IDENTIFY REQUIRED SPECIALIZATIONS
+        # ====================================================
+
+        specializations = (
+            identify_required_specializations(
+                conversation_messages
+            )
+        )
+
+        print(
+            "APPOINTMENT SPECIALIZATIONS:",
+            specializations
+        )
+
+        # ====================================================
+        # GET DOCTORS ALREADY BOOKED BY CURRENT USER
+        # ====================================================
+
+        booked_doctor_rows = connection.execute(
+            """
+            SELECT DISTINCT doctor_id
+            FROM appointments
+            WHERE user_id = ?
+            AND status = 'booked'
+            """,
+            (
+                user_id,
+            ),
+        ).fetchall()
+
+        booked_doctor_ids = {
+            int(row["doctor_id"])
+            for row in booked_doctor_rows
+        }
+
+        # ====================================================
+        # FILTER RELEVANT DOCTORS
+        # ====================================================
+
+        relevant_doctors = []
+
+        for doctor in DOCTORS:
+
+            if (
+                doctor["specialization"]
+                not in specializations
+            ):
+                continue
+
+            doctor_data = dict(
+                doctor
+            )
+
+            doctor_data[
+                "already_booked"
+            ] = (
+                doctor["id"]
+                in booked_doctor_ids
+            )
+
+            relevant_doctors.append(
+                doctor_data
+            )
+
+        # ====================================================
+        # SORT
+        # Higher rating first
+        # ====================================================
+
+        relevant_doctors.sort(
+            key=lambda doctor: (
+                doctor.get(
+                    "rating",
+                    0
+                ),
+                doctor.get(
+                    "reviews",
+                    0
+                )
+            ),
+            reverse=True
+        )
+
+        return jsonify({
+
+            "success":
+                True,
+
+            "specializations":
+                specializations,
+
+            "doctors":
+                relevant_doctors,
+        })
+
+    except Exception as error:
+
+        print(
+            "APPOINTMENT DOCTOR ERROR:",
+            repr(error)
+        )
+
+        return jsonify({
+            "error":
+                "Unable to find relevant doctors."
+        }), 500
+
+    finally:
+
+        connection.close()
+
+
+@app.route(
+    "/appointments/slots",
+    methods=["POST"]
+)
+@login_required
+def appointment_slots():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Invalid request data."
+        }), 400
+
+    doctor_id = data.get(
+        "doctor_id"
+    )
+
+    appointment_date = data.get(
+        "date"
+    )
+
+    if not doctor_id or not appointment_date:
+
+        return jsonify({
+            "error":
+                "Doctor and date are required."
+        }), 400
+
+    if (
+        appointment_date
+        < datetime.now().strftime(
+            "%Y-%m-%d"
+        )
+    ):
+
+        return jsonify({
+            "error":
+                "Appointment date cannot be in the past."
+        }), 400
+
+    try:
+
+        datetime.strptime(
+            appointment_date,
+            "%Y-%m-%d"
+        )
+
+    except ValueError:
+
+        return jsonify({
+            "error":
+                "Invalid appointment date."
+        }), 400
+
+    doctor = next(
+        (
+            doctor
+            for doctor in DOCTORS
+            if doctor["id"] == int(doctor_id)
+        ),
+        None
+    )
+
+    if not doctor:
+
+        return jsonify({
+            "error":
+                "Doctor not found."
+        }), 404
+
+    user_id = session["user_id"]
+
+    connection = get_db()
+
+    try:
+
+        # ====================================================
+        # ALL SLOTS FOR THIS DOCTOR
+        # ====================================================
+
+        all_slots = generate_doctor_slots(
+            doctor,
+            appointment_date
+        )
+
+        # ====================================================
+        # SLOTS ALREADY BOOKED FOR THIS DOCTOR
+        # BY ANY USER
+        # ====================================================
+
+        booked_rows = connection.execute(
+            """
+            SELECT slot_time
+            FROM appointments
+            WHERE doctor_id = ?
+            AND appointment_date = ?
+            AND status = 'booked'
+            """,
+            (
+                doctor_id,
+                appointment_date,
+            ),
+        ).fetchall()
+
+        booked_slots = {
+            row["slot_time"]
+            for row in booked_rows
+        }
+
+        # ====================================================
+        # CURRENT USER'S BOOKINGS ON SAME DATE
+        # FOR OTHER DOCTORS
+        # ====================================================
+
+        user_booking_rows = connection.execute(
+            """
+            SELECT
+                slot_time,
+                doctor_id
+            FROM appointments
+            WHERE user_id = ?
+            AND appointment_date = ?
+            AND status = 'booked'
+            """,
+            (
+                user_id,
+                appointment_date,
+            ),
+        ).fetchall()
+
+        user_booked_slots = {}
+
+        for row in user_booking_rows:
+
+            booked_doctor = next(
+                (
+                    item
+                    for item in DOCTORS
+                    if item["id"]
+                    == int(row["doctor_id"])
+                ),
+                None
+            )
+
+            if not booked_doctor:
+                continue
+
+            user_booked_slots[
+                row["slot_time"]
+            ] = {
+                "doctor_id":
+                    booked_doctor["id"],
+
+                "doctor_name":
+                    booked_doctor["name"],
+            }
+
+        # ====================================================
+        # CHECK WHETHER USER ALREADY BOOKED THIS DOCTOR
+        # ====================================================
+
+        existing_doctor_booking = connection.execute(
+            """
+            SELECT id
+            FROM appointments
+            WHERE user_id = ?
+            AND doctor_id = ?
+            AND status = 'booked'
+            LIMIT 1
+            """,
+            (
+                user_id,
+                doctor_id,
+            ),
+        ).fetchone()
+
+        doctor_already_booked = (
+            existing_doctor_booking
+            is not None
+        )
+
+        return jsonify({
+
+            "success":
+                True,
+
+            "doctor":
+                doctor,
+
+            "date":
+                appointment_date,
+
+            "slots":
+                all_slots,
+
+            "booked_slots":
+                list(
+                    booked_slots
+                ),
+
+            "user_booked_slots":
+                user_booked_slots,
+
+            "doctor_already_booked":
+                doctor_already_booked,
+        })
+
+    finally:
+
+        connection.close()
+
+
+# ============================================================
+# EDIT APPOINTMENT - AVAILABLE SLOTS
+# ============================================================
+
+@app.route(
+    "/appointments/edit-slots",
+    methods=["POST"]
+)
+@login_required
+def edit_appointment_slots():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Invalid request data."
+        }), 400
+
+    appointment_id = data.get(
+        "appointment_id"
+    )
+
+    if not appointment_id:
+
+        return jsonify({
+            "error":
+                "Appointment ID is required."
+        }), 400
+
+    connection = get_db()
+
+    try:
+
+        appointment = connection.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                doctor_id,
+                appointment_date,
+                slot_time,
+                status
+            FROM appointments
+            WHERE id = ?
+            AND user_id = ?
+            AND status = 'booked'
+            """,
+            (
+                appointment_id,
+                session["user_id"],
+            ),
+        ).fetchone()
+
+        if not appointment:
+
+            return jsonify({
+                "error":
+                    "Appointment not found."
+            }), 404
+
+        if not appointment_changes_allowed(
+            appointment["appointment_date"],
+            appointment["slot_time"],
+        ):
+
+            return jsonify({
+                "error":
+                    "This appointment can no longer be modified because it is less than 6 hours away."
+            }), 403
+
+        doctor = get_doctor_by_id(
+            appointment["doctor_id"]
+        )
+
+        if not doctor:
+
+            return jsonify({
+                "error":
+                    "Doctor not found."
+            }), 404
+
+        all_slots = generate_doctor_slots(
+            doctor,
+            appointment["appointment_date"]
+        )
+
+        booked_rows = connection.execute(
+            """
+            SELECT
+                slot_time
+            FROM appointments
+            WHERE doctor_id = ?
+            AND appointment_date = ?
+            AND status = 'booked'
+            AND id != ?
+            """,
+            (
+                appointment["doctor_id"],
+                appointment["appointment_date"],
+                appointment["id"],
+            ),
+        ).fetchall()
+
+        booked_slots = {
+            row["slot_time"]
+            for row in booked_rows
+        }
+
+        user_rows = connection.execute(
+            """
+            SELECT
+                slot_time,
+                doctor_id
+            FROM appointments
+            WHERE user_id = ?
+            AND appointment_date = ?
+            AND status = 'booked'
+            AND id != ?
+            """,
+            (
+                session["user_id"],
+                appointment["appointment_date"],
+                appointment["id"],
+            ),
+        ).fetchall()
+
+        user_booked_slots = {}
+
+        for row in user_rows:
+
+            other_doctor = get_doctor_by_id(
+                row["doctor_id"]
+            )
+
+            if not other_doctor:
+                continue
+
+            user_booked_slots[
+                row["slot_time"]
+            ] = {
+                "doctor_id":
+                    other_doctor["id"],
+
+                "doctor_name":
+                    other_doctor["name"],
+            }
+
+        return jsonify({
+
+            "success":
+                True,
+
+            "appointment_id":
+                appointment["id"],
+
+            "doctor":
+                doctor,
+
+            "date":
+                appointment["appointment_date"],
+
+            "current_slot":
+                appointment["slot_time"],
+
+            "slots":
+                all_slots,
+
+            "booked_slots":
+                list(booked_slots),
+
+            "user_booked_slots":
+                user_booked_slots,
+        })
+
+    finally:
+
+        connection.close()
+
+
+# ============================================================
+# EDIT APPOINTMENT
+# ============================================================
+
+@app.route(
+    "/appointments/edit",
+    methods=["POST"]
+)
+@login_required
+def edit_appointment():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Invalid request data."
+        }), 400
+
+    appointment_id = data.get(
+        "appointment_id"
+    )
+
+    new_slot_time = data.get(
+        "slot_time"
+    )
+
+    if not appointment_id or not new_slot_time:
+
+        return jsonify({
+            "error":
+                "Appointment and slot are required."
+        }), 400
+
+    connection = get_db()
+
+    try:
+
+        appointment = connection.execute(
+            """
+            SELECT *
+            FROM appointments
+            WHERE id = ?
+            AND user_id = ?
+            AND status = 'booked'
+            """,
+            (
+                appointment_id,
+                session["user_id"],
+            ),
+        ).fetchone()
+
+        if not appointment:
+
+            return jsonify({
+                "error":
+                    "Appointment not found."
+            }), 404
+
+        if not appointment_changes_allowed(
+            appointment["appointment_date"],
+            appointment["slot_time"],
+        ):
+
+            return jsonify({
+                "error":
+                    "This appointment can no longer be modified because it is less than 6 hours away."
+            }), 403
+
+        doctor = get_doctor_by_id(
+            appointment["doctor_id"]
+        )
+
+        if not doctor:
+
+            return jsonify({
+                "error":
+                    "Doctor not found."
+            }), 404
+
+        valid_slots = generate_doctor_slots(
+            doctor,
+            appointment["appointment_date"]
+        )
+
+        if new_slot_time not in valid_slots:
+
+            return jsonify({
+                "error":
+                    "This slot is not available."
+            }), 400
+
+        same_doctor_booking = connection.execute(
+            """
+            SELECT id
+            FROM appointments
+            WHERE doctor_id = ?
+            AND appointment_date = ?
+            AND slot_time = ?
+            AND status = 'booked'
+            AND id != ?
+            """,
+            (
+                appointment["doctor_id"],
+                appointment["appointment_date"],
+                new_slot_time,
+                appointment["id"],
+            ),
+        ).fetchone()
+
+        if same_doctor_booking:
+
+            return jsonify({
+                "error":
+                    "This slot is already booked by someone else."
+            }), 409
+
+        other_doctor_booking = connection.execute(
+            """
+            SELECT
+                doctor_id
+            FROM appointments
+            WHERE user_id = ?
+            AND appointment_date = ?
+            AND slot_time = ?
+            AND status = 'booked'
+            AND id != ?
+            LIMIT 1
+            """,
+            (
+                session["user_id"],
+                appointment["appointment_date"],
+                new_slot_time,
+                appointment["id"],
+            ),
+        ).fetchone()
+
+        if other_doctor_booking:
+
+            other_doctor = get_doctor_by_id(
+                other_doctor_booking["doctor_id"]
+            )
+
+            doctor_name = (
+                other_doctor["name"]
+                if other_doctor
+                else "another doctor"
+            )
+
+            return jsonify({
+                "error":
+                    f"You already have an appointment with {doctor_name} at this time."
+            }), 409
+
+        connection.execute(
+            """
+            UPDATE appointments
+            SET slot_time = ?
+            WHERE id = ?
+            AND user_id = ?
+            AND status = 'booked'
+            """,
+            (
+                new_slot_time,
+                appointment["id"],
+                session["user_id"],
+            ),
+        )
+
+        connection.commit()
+
+        return jsonify({
+            "success":
+                True,
+
+            "message":
+                "Appointment updated successfully.",
+
+            "slot":
+                new_slot_time,
+        })
+
+    except Exception as error:
+
+        connection.rollback()
+
+        print(
+            "EDIT APPOINTMENT ERROR:",
+            repr(error)
+        )
+
+        return jsonify({
+            "error":
+                "Unable to update appointment."
+        }), 500
+
+    finally:
+
+        connection.close()
+
+
+# ============================================================
+# CANCEL APPOINTMENT
+# ============================================================
+
+@app.route(
+    "/appointments/cancel",
+    methods=["POST"]
+)
+@login_required
+def cancel_appointment():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Invalid request data."
+        }), 400
+
+    appointment_id = data.get(
+        "appointment_id"
+    )
+
+    if not appointment_id:
+
+        return jsonify({
+            "error":
+                "Appointment ID is required."
+        }), 400
+
+    connection = get_db()
+
+    try:
+
+        appointment = connection.execute(
+            """
+            SELECT
+                id,
+                doctor_id,
+                appointment_date,
+                slot_time
+            FROM appointments
+            WHERE id = ?
+            AND user_id = ?
+            AND status = 'booked'
+            """,
+            (
+                appointment_id,
+                session["user_id"],
+            ),
+        ).fetchone()
+
+        if not appointment:
+
+            return jsonify({
+                "error":
+                    "Appointment not found."
+            }), 404
+
+        if not appointment_changes_allowed(
+            appointment["appointment_date"],
+            appointment["slot_time"],
+        ):
+
+            return jsonify({
+                "error":
+                    "This appointment can no longer be cancelled because it is less than 6 hours away."
+            }), 403
+
+        connection.execute(
+            """
+            UPDATE appointments
+            SET status = 'cancelled'
+            WHERE id = ?
+            AND user_id = ?
+            AND status = 'booked'
+            """,
+            (
+                appointment_id,
+                session["user_id"],
+            ),
+        )
+
+        connection.commit()
+
+        # ====================================================
+        # SEND CANCELLATION EMAIL
+        # ====================================================
+
+        user = connection.execute(
+            """
+            SELECT
+                name,
+                email
+            FROM users
+            WHERE id = ?
+            """,
+            (
+                session["user_id"],
+            ),
+        ).fetchone()
+
+        doctor = get_doctor_by_id(
+            appointment["doctor_id"]
+        )
+
+        if user and doctor:
+
+            send_cancellation_email(
+                user,
+                doctor,
+                appointment["appointment_date"],
+                appointment["slot_time"],
+            )
+
+        return jsonify({
+            "success":
+                True,
+
+            "message":
+                "Appointment cancelled successfully."
+        })
+
+    except Exception as error:
+
+        connection.rollback()
+
+        print(
+            "CANCEL APPOINTMENT ERROR:",
+            repr(error)
+        )
+
+        return jsonify({
+            "error":
+                "Unable to cancel appointment."
+        }), 500
+
+    finally:
+
+        connection.close()
+
+
+@app.route(
+    "/appointments/book",
+    methods=["POST"]
+)
+@login_required
+def book_appointment():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Invalid request data."
+        }), 400
+
+    doctor_id = data.get(
+        "doctor_id"
+    )
+
+    appointment_date = data.get(
+        "date"
+    )
+
+    slot_time = data.get(
+        "slot_time"
+    )
+
+    conversation_id = data.get(
+        "conversation_id"
+    )
+
+    if not all([
+        doctor_id,
+        appointment_date,
+        slot_time,
+        conversation_id,
+    ]):
+
+        return jsonify({
+            "error":
+                "Doctor, date, slot and conversation are required."
+        }), 400
+
+    try:
+
+        appointment_date_obj = datetime.strptime(
+            appointment_date,
+            "%Y-%m-%d"
+        )
+
+    except ValueError:
+
+        return jsonify({
+            "error":
+                "Invalid appointment date."
+        }), 400
+
+    if appointment_date < datetime.now().strftime("%Y-%m-%d"):
+
+        return jsonify({
+            "error":
+                "Appointment date cannot be in the past."
+        }), 400
+
+    doctor = next(
+        (
+            doctor
+            for doctor in DOCTORS
+            if doctor["id"] == int(doctor_id)
+        ),
+        None
+    )
+
+    if not doctor:
+
+        return jsonify({
+            "error":
+                "Doctor not found."
+        }), 404
+
+    # --------------------------------------------------------
+    # VERIFY THAT SLOT BELONGS TO DOCTOR'S TIMINGS
+    # --------------------------------------------------------
+
+    valid_slots = generate_doctor_slots(
+        doctor,
+        appointment_date
+    )
+
+    if slot_time not in valid_slots:
+
+        return jsonify({
+            "error":
+                "This slot is not available."
+        }), 400
+
+    user_id = session["user_id"]
+
+    connection = get_db()
+
+    try:
+
+        # ----------------------------------------------------
+        # VERIFY CONVERSATION BELONGS TO CURRENT USER
+        # ----------------------------------------------------
+
+        conversation = connection.execute(
+            """
+            SELECT id
+            FROM conversations
+            WHERE id = ?
+            AND user_id = ?
+            """,
+            (
+                conversation_id,
+                user_id,
+            ),
+        ).fetchone()
+
+        if not conversation:
+
+            return jsonify({
+                "error":
+                    "Conversation not found."
+            }), 404
+
+        now = datetime.now().isoformat()
+
+        # ====================================================
+        # PREVENT USER FROM BOOKING SAME DOCTOR AGAIN
+        # ====================================================
+
+        existing_doctor_booking = connection.execute(
+            """
+            SELECT id
+            FROM appointments
+            WHERE user_id = ?
+            AND doctor_id = ?
+            AND status = 'booked'
+            LIMIT 1
+            """,
+            (
+                user_id,
+                doctor_id,
+            ),
+        ).fetchone()
+
+        if existing_doctor_booking:
+
+            return jsonify({
+                "success":
+                    False,
+
+                "error":
+                    "You already have an appointment with this doctor."
+            }), 409
+
+        # ----------------------------------------------------
+        # ATOMIC BOOKING
+        # UNIQUE CONSTRAINT PREVENTS DOUBLE BOOKING
+        # ----------------------------------------------------
+
+        try:
+
+            connection.execute(
+                """
+                INSERT INTO appointments (
+                    user_id,
+                    conversation_id,
+                    doctor_id,
+                    appointment_date,
+                    slot_time,
+                    status,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    conversation_id,
+                    doctor_id,
+                    appointment_date,
+                    slot_time,
+                    "booked",
+                    now,
+                ),
+            )
+
+            connection.commit()
+
+        except sqlite3.IntegrityError:
+
+            connection.rollback()
+
+            return jsonify({
+                "success":
+                    False,
+
+                "error":
+                    "Sorry, this slot has just been booked by another user. Please choose another slot."
+            }), 409
+
+        # ====================================================
+        # SEND BOOKING CONFIRMATION EMAIL
+        # ====================================================
+
+        user = connection.execute(
+            """
+            SELECT
+                name,
+                email
+            FROM users
+            WHERE id = ?
+            """,
+            (
+                user_id,
+            ),
+        ).fetchone()
+
+        if user:
+
+            send_booking_confirmation_email(
+                user,
+                doctor,
+                appointment_date,
+                slot_time,
+            )
+
+        return jsonify({
+            "success":
+                True,
+
+            "message":
+                "Appointment booked successfully.",
+
+            "doctor":
+                doctor["name"],
+
+            "date":
+                appointment_date,
+
+            "slot":
+                slot_time,
+        })
+
+    except Exception as error:
+
+        connection.rollback()
+
+        print(
+            "APPOINTMENT BOOKING ERROR:",
+            repr(error)
+        )
+
+        return jsonify({
+            "error":
+                "Unable to book the appointment."
+        }), 500
+
+    finally:
+
+        connection.close()
+
+
+# ============================================================
+# PROFILE
+# ============================================================
+
+@app.route(
+    "/profile",
+    methods=["GET"]
+)
+@login_required
+def profile():
+
+    connection = get_db()
+
+    try:
+
+        user = connection.execute(
+            """
+            SELECT
+                id,
+                name,
+                email
+            FROM users
+            WHERE id = ?
+            """,
+            (
+                session["user_id"],
+            ),
+        ).fetchone()
+
+        if not user:
+
+            session.clear()
+
+            return jsonify({
+                "error":
+                    "User not found."
+            }), 404
+
+        return jsonify({
+            "success":
+                True,
+
+            "user": {
+                "id":
+                    user["id"],
+
+                "name":
+                    user["name"],
+
+                "email":
+                    user["email"],
+            }
+        })
+
+    finally:
+
+        connection.close()
+
+
+# ============================================================
+# CHANGE PASSWORD
+# ============================================================
+
+@app.route(
+    "/change-password",
+    methods=["POST"]
+)
+@login_required
+def change_password():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error":
+                "Invalid request data."
+        }), 400
+
+    old_password = data.get(
+        "old_password",
+        ""
+    )
+
+    new_password = data.get(
+        "new_password",
+        ""
+    )
+
+    confirm_password = data.get(
+        "confirm_password",
+        ""
+    )
+
+    if not all([
+        old_password,
+        new_password,
+        confirm_password,
+    ]):
+
+        return jsonify({
+            "error":
+                "Please fill in all password fields."
+        }), 400
+
+    if new_password != confirm_password:
+
+        return jsonify({
+            "error":
+                "New passwords do not match."
+        }), 400
+
+    if len(new_password) < 6:
+
+        return jsonify({
+            "error":
+                "New password must contain at least 6 characters."
+        }), 400
+
+    connection = get_db()
+
+    try:
+
+        user = connection.execute(
+            """
+            SELECT password
+            FROM users
+            WHERE id = ?
+            """,
+            (
+                session["user_id"],
+            ),
+        ).fetchone()
+
+        if not user:
+
+            return jsonify({
+                "error":
+                    "User not found."
+            }), 404
+
+        if not check_password_hash(
+            user["password"],
+            old_password,
+        ):
+
+            return jsonify({
+                "error":
+                    "Old password is incorrect."
+            }), 400
+
+        new_password_hash = (
+            generate_password_hash(
+                new_password
+            )
+        )
+
+        connection.execute(
+            """
+            UPDATE users
+            SET password = ?
+            WHERE id = ?
+            """,
+            (
+                new_password_hash,
+                session["user_id"],
+            ),
+        )
+
+        connection.commit()
+
+        session.clear()
+
+        return jsonify({
+            "success":
+                True,
+
+            "message":
+                "Password changed successfully."
+        })
+
+    except Exception as error:
+
+        connection.rollback()
+
+        print(
+            "CHANGE PASSWORD ERROR:",
+            repr(error)
+        )
+
+        return jsonify({
+            "error":
+                "Unable to change password."
+        }), 500
+
+    finally:
+
+        connection.close()
+
+
+# ============================================================
+# MY BOOKINGS
+# ============================================================
+
+@app.route(
+    "/my-bookings",
+    methods=["GET"]
+)
+@login_required
+def my_bookings():
+
+    connection = get_db()
+
+    try:
+
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                doctor_id,
+                appointment_date,
+                slot_time,
+                status,
+                created_at
+            FROM appointments
+            WHERE user_id = ?
+            AND status = 'booked'
+            ORDER BY
+                appointment_date ASC,
+                slot_time ASC
+            """,
+            (
+                session["user_id"],
+            ),
+        ).fetchall()
+
+        bookings = []
+
+        for row in rows:
+
+            doctor = get_doctor_by_id(
+                row["doctor_id"]
+            )
+
+            if not doctor:
+                continue
+
+            can_modify = (
+                appointment_changes_allowed(
+                    row["appointment_date"],
+                    row["slot_time"]
+                )
+            )
+
+            bookings.append({
+
+                "id":
+                    row["id"],
+
+                "doctor": {
+                    "id":
+                        doctor["id"],
+
+                    "name":
+                        doctor["name"],
+
+                    "specialization":
+                        doctor["specialization"],
+
+                    "experience":
+                        doctor["experience"],
+
+                    "qualification":
+                        doctor["qualification"],
+
+                    "rating":
+                        doctor["rating"],
+
+                    "reviews":
+                        doctor["reviews"],
+
+                    "hospital":
+                        doctor["hospital"],
+
+                    "address":
+                        doctor["address"],
+
+                    "phone":
+                        doctor["phone"],
+
+                    "email":
+                        doctor["email"],
+                },
+
+                "appointment_date":
+                    row["appointment_date"],
+
+                "slot_time":
+                    row["slot_time"],
+
+                "status":
+                    row["status"],
+
+                "can_modify":
+                    can_modify,
+            })
+
+        return jsonify({
+            "success":
+                True,
+
+            "bookings":
+                bookings,
+        })
+
+    finally:
+
+        connection.close()
+
+
 # ============================================================
 # REGISTER
 # ============================================================
@@ -798,6 +3030,32 @@ def register():
     user_id = cursor.lastrowid
 
     connection.close()
+
+    # ========================================================
+    # ACCOUNT CREATION EMAIL
+    # ========================================================
+
+    send_email(
+        email,
+        "Welcome to MediGuide",
+        f"""
+Hello {name},
+
+Welcome to MediGuide!
+
+Your account has been successfully created.
+
+You can now use MediGuide to:
+- Get medical guidance
+- Analyze blood reports
+- Find relevant doctors
+- Book appointments
+
+We are happy to have you with us.
+
+MediGuide Team
+""".strip()
+    )
 
     session.clear()
 
@@ -1057,13 +3315,6 @@ def chat():
 
         # ====================================================
         # RESPONSE SOURCE
-        #
-        # IMPORTANT:
-        # This is a separate API field only.
-        # It is NOT added to "answer".
-        #
-        # Therefore the existing UI can continue to
-        # display only the answer text.
         # ====================================================
 
         retrieval_source = (
@@ -1191,8 +3442,6 @@ def chat():
             "intent":
                 intent,
 
-            # Separate field.
-            # Frontend does not need to display it.
             "source":
                 response_source,
         })
@@ -1535,10 +3784,6 @@ def home_remedy_suggestions():
 
     try:
 
-        # ====================================================
-        # VERIFY CONVERSATION
-        # ====================================================
-
         conversation = connection.execute(
             """
             SELECT id
@@ -1558,10 +3803,6 @@ def home_remedy_suggestions():
                 "error":
                     "Conversation not found."
             }), 404
-
-        # ====================================================
-        # LOAD COMPLETE CONVERSATION
-        # ====================================================
 
         rows = connection.execute(
             """
@@ -1594,10 +3835,6 @@ def home_remedy_suggestions():
                     row["content"],
             })
 
-        # ====================================================
-        # RUN HOME REMEDY NODE
-        # ====================================================
-
         result = home_remedy_node(
             {
                 "messages":
@@ -1607,10 +3844,6 @@ def home_remedy_suggestions():
                     "home_remedy",
             }
         )
-
-        # ====================================================
-        # GENERATE FINAL HOME REMEDY RESPONSE
-        # ====================================================
 
         result = answer_node(
             result
@@ -1631,10 +3864,6 @@ def home_remedy_suggestions():
         suggestions = clean_patient_response(
             suggestions
         )
-
-        # ====================================================
-        # SAVE SUGGESTION
-        # ====================================================
 
         save_suggestion_message(
             connection,
@@ -1817,8 +4046,6 @@ def yoga_suggestions():
         connection.close()
 
 
-
-
 # ============================================================
 # BLOOD REPORT UPLOAD
 # DIGITAL PDF ONLY
@@ -1835,10 +4062,6 @@ ALLOWED_REPORT_EXTENSIONS = {
 )
 @login_required
 def analyze_report():
-
-    # ========================================================
-    # CHECK FILE
-    # ========================================================
 
     if "report" not in request.files:
 
@@ -1866,20 +4089,12 @@ def analyze_report():
         filename
     ).suffix.lower()
 
-    # ========================================================
-    # PDF ONLY
-    # ========================================================
-
     if extension not in ALLOWED_REPORT_EXTENSIONS:
 
         return jsonify({
             "error":
                 "Only digital PDF blood reports are supported."
         }), 400
-
-    # ========================================================
-    # TEMP DIRECTORY
-    # ========================================================
 
     temporary_directory = tempfile.mkdtemp(
         prefix="mediguide_report_"
@@ -1893,10 +4108,6 @@ def analyze_report():
     connection = get_db()
 
     try:
-
-        # ====================================================
-        # SAVE PDF
-        # ====================================================
 
         uploaded_file.save(
             file_path
@@ -1919,13 +4130,6 @@ def analyze_report():
             "FORMAT: DIGITAL PDF ONLY"
         )
 
-        # ====================================================
-        # CONVERSATION ID
-        #
-        # Upload works even when there is NO existing
-        # conversation/message.
-        # ====================================================
-
         conversation_id = request.form.get(
             "conversation_id"
         )
@@ -1933,10 +4137,6 @@ def analyze_report():
         user_id = session[
             "user_id"
         ]
-
-        # ====================================================
-        # VALIDATE EXISTING CONVERSATION
-        # ====================================================
 
         if conversation_id:
 
@@ -1956,13 +4156,6 @@ def analyze_report():
             if not conversation:
 
                 conversation_id = None
-
-        # ====================================================
-        # CREATE NEW CONVERSATION
-        #
-        # This is what allows the report to work even if
-        # the user has not sent a chat message.
-        # ====================================================
 
         if not conversation_id:
 
@@ -1994,10 +4187,6 @@ def analyze_report():
 
             connection.commit()
 
-        # ====================================================
-        # SAVE UPLOAD MESSAGE
-        # ====================================================
-
         upload_message = (
             "📎 Uploaded blood report: "
             + filename
@@ -2023,12 +4212,6 @@ def analyze_report():
 
         connection.commit()
 
-        # ====================================================
-        # RUN BLOOD REPORT AGENT
-        #
-        # NO CHAT MESSAGE IS REQUIRED.
-        # ====================================================
-
         print(
             "\n"
             + "=" * 70
@@ -2050,10 +4233,6 @@ def analyze_report():
             "",
         )
 
-        # ====================================================
-        # ANALYSIS ERROR
-        # ====================================================
-
         if answer.startswith(
             "REPORT_ANALYSIS_ERROR:"
         ):
@@ -2064,7 +4243,6 @@ def analyze_report():
                 1,
             ).strip()
 
-            # Remove upload message because analysis failed
             connection.execute(
                 """
                 DELETE FROM messages
@@ -2078,7 +4256,6 @@ def analyze_report():
                 ),
             )
 
-            # Remove newly-created empty conversation
             remaining_messages = connection.execute(
                 """
                 SELECT COUNT(*)
@@ -2111,10 +4288,6 @@ def analyze_report():
                     error_message
             }), 400
 
-        # ====================================================
-        # SAVE ANALYSIS
-        # ====================================================
-
         connection.execute(
             """
             INSERT INTO messages (
@@ -2132,10 +4305,6 @@ def analyze_report():
                 datetime.now().isoformat(),
             ),
         )
-
-        # ====================================================
-        # UPDATE CONVERSATION
-        # ========================================================
 
         connection.execute(
             """
@@ -2171,10 +4340,6 @@ def analyze_report():
         print(
             "=" * 70
         )
-
-        # ====================================================
-        # RESPONSE
-        # ====================================================
 
         return jsonify({
             "success":
@@ -2217,10 +4382,6 @@ def analyze_report():
 
         connection.close()
 
-        # ====================================================
-        # DELETE TEMPORARY PDF
-        # ====================================================
-
         try:
 
             if os.path.exists(
@@ -2247,7 +4408,6 @@ def analyze_report():
             )
 
 
-
 # ============================================================
 # RUN FLASK APPLICATION
 # ============================================================
@@ -2256,8 +4416,20 @@ if __name__ == "__main__":
 
     init_db()
 
+    # ========================================================
+    # START APPOINTMENT REMINDER WORKER
+    # ========================================================
+
+    reminder_thread = threading.Thread(
+        target=appointment_reminder_worker,
+        daemon=True,
+    )
+
+    reminder_thread.start()
+
     app.run(
         host="0.0.0.0",
         port=8000,
         debug=True,
+        use_reloader=False,
     )

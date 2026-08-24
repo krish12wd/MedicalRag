@@ -36,7 +36,7 @@ QWEN_BASE_URL = os.getenv(
 
 QWEN_MODEL = os.getenv(
     "QWEN_MODEL",
-    "qwen-plus",
+    "qwen-plus-character",
 )
 
 if not QWEN_API_KEY:

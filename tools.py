@@ -924,7 +924,7 @@ load_dotenv()
 
 REPORT_MODEL = os.getenv(
     "QWEN_MODEL",
-    "qwen-plus",
+    "qwen-qwen-plus-character",
 )
 
 
