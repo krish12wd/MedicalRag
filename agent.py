@@ -203,6 +203,111 @@ def user_conversation_text(messages):
         output
     )
 
+def current_topic_context(messages):
+    """
+    Return only the conversation belonging to the patient's
+    current/latest medical complaint.
+
+    Older completed complaints remain in chat history/database,
+    but are not mixed into the current medical answer.
+    """
+
+    if not messages:
+        return ""
+
+    # --------------------------------------------------------
+    # Find the latest user message that looks like a NEW
+    # medical complaint.
+    # --------------------------------------------------------
+
+    complaint_patterns = [
+        r"^\s*i\s+have\s+",
+        r"^\s*i'm\s+having\s+",
+        r"^\s*i\s+am\s+having\s+",
+        r"^\s*i'm\s+experiencing\s+",
+        r"^\s*i\s+am\s+experiencing\s+",
+        r"^\s*i\s+feel\s+",
+        r"^\s*i\s+am\s+feeling\s+",
+        r"^\s*my\s+\w+",
+        r"^\s*suffering\s+from\s+",
+        r"^\s*i\s+have\s+been\s+",
+        r"^\s*i've\s+been\s+",
+    ]
+
+    medication_patterns = [
+        r"\bi\s+have\s+taken\b",
+        r"\bi\s+have\s+been\s+taking\b",
+        r"\bi\s+am\s+taking\b",
+        r"\bi'm\s+taking\b",
+        r"\bi\s+took\b",
+        r"\bi\s+used\b",
+    ]
+
+    latest_complaint_index = None
+
+    for index in range(len(messages) - 1, -1, -1):
+
+        message = messages[index]
+
+        if get_message_role(message) != "user":
+            continue
+
+        content = get_message_content(message).strip()
+
+        if not content:
+            continue
+
+        # Do not mistake medicine answers for a new complaint.
+        if any(
+            re.search(
+                pattern,
+                content,
+                flags=re.IGNORECASE,
+            )
+            for pattern in medication_patterns
+        ):
+            continue
+
+        if any(
+            re.search(
+                pattern,
+                content,
+                flags=re.IGNORECASE,
+            )
+            for pattern in complaint_patterns
+        ):
+            latest_complaint_index = index
+            break
+
+    # --------------------------------------------------------
+    # If no clear new complaint is found, use the recent
+    # conversation. This handles follow-up answers such as:
+    #
+    # "60 days"
+    # "thinning all over"
+    # "no"
+    # --------------------------------------------------------
+
+    if latest_complaint_index is None:
+
+        recent_messages = messages[-12:]
+
+        return conversation_text(
+            recent_messages
+        )
+
+    # --------------------------------------------------------
+    # Keep only messages from the current complaint onwards.
+    # --------------------------------------------------------
+
+    current_messages = messages[
+        latest_complaint_index:
+    ]
+
+    return conversation_text(
+        current_messages
+    )
+
 
 def clean_json_response(text):
 
@@ -280,7 +385,11 @@ def build_search_query(
 
     clinical_parts = []
 
-    for message in messages:
+    current_messages = current_topic_messages(
+    messages
+    )
+
+    for message in current_messages:
 
         role = get_message_role(
             message
@@ -380,6 +489,83 @@ def build_search_query(
 
     return text
 
+def current_topic_messages(messages):
+    """
+    Return messages belonging to the latest medical complaint.
+    """
+
+    if not messages:
+        return []
+
+    complaint_patterns = [
+        r"^\s*i\s+have\s+",
+        r"^\s*i'm\s+having\s+",
+        r"^\s*i\s+am\s+having\s+",
+        r"^\s*i'm\s+experiencing\s+",
+        r"^\s*i\s+am\s+experiencing\s+",
+        r"^\s*i\s+feel\s+",
+        r"^\s*i\s+am\s+feeling\s+",
+        r"^\s*my\s+\w+",
+        r"^\s*suffering\s+from\s+",
+        r"^\s*i\s+have\s+been\s+",
+        r"^\s*i've\s+been\s+",
+    ]
+
+    medication_patterns = [
+        r"\bi\s+have\s+taken\b",
+        r"\bi\s+have\s+been\s+taking\b",
+        r"\bi\s+am\s+taking\b",
+        r"\bi'm\s+taking\b",
+        r"\bi\s+took\b",
+        r"\bi\s+used\b",
+    ]
+
+    start_index = None
+
+    for index in range(len(messages) - 1, -1, -1):
+
+        message = messages[index]
+
+        if get_message_role(message) != "user":
+            continue
+
+        content = get_message_content(message).strip()
+
+        if not content:
+            continue
+
+        if any(
+            re.search(
+                pattern,
+                content,
+                flags=re.IGNORECASE,
+            )
+            for pattern in medication_patterns
+        ):
+            continue
+
+        if any(
+            re.search(
+                pattern,
+                content,
+                flags=re.IGNORECASE,
+            )
+            for pattern in complaint_patterns
+        ):
+            start_index = index
+            break
+
+    if start_index is None:
+        return messages[-12:]
+
+    return messages[start_index:]
+
+
+def current_topic_context(messages):
+
+    return conversation_text(
+        current_topic_messages(messages)
+    )
 
 # ============================================================
 # CONSULTATION
@@ -394,9 +580,9 @@ def consultation_node(
         []
     )
 
-    history = conversation_text(
-        messages
-    )
+    history = current_topic_context(
+    messages
+)
 
     current = get_current_datetime()
 
@@ -781,9 +967,9 @@ def medical_retrieval_node(
         []
     )
 
-    conversation = user_conversation_text(
-        messages
-    )
+    conversation = current_topic_context(
+    messages
+)
 
     if not conversation:
 
@@ -890,8 +1076,8 @@ def rag_relevance_node(
         []
     )
 
-    conversation = user_conversation_text(
-        messages
+    conversation = current_topic_context(
+    messages
     )
 
     if not retrieved:
@@ -1286,9 +1472,9 @@ def answer_node(
         []
     )
 
-    history = conversation_text(
-        messages
-    )
+    history = current_topic_context(
+    messages
+)
 
     intent = state.get(
         "intent",

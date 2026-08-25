@@ -172,6 +172,77 @@ def _clean_html(
 
 
 # ============================================================
+# SPECIALIZED SEARCH QUERY CLEANER
+# ============================================================
+
+def _clean_specialized_query(query: str) -> str:
+    """
+    Create a short search query for Home Remedies / Yoga.
+
+    The agent may pass the entire conversation history as
+    `query`. Search engines perform better with only the
+    current symptom/topic.
+    """
+
+    query = str(query).strip()
+
+    # Remove common conversational phrases
+    query = re.sub(
+        r"\b(?:i|im|i'm|ive|i've|my|me|please|tell|me|"
+        r"what|should|can|could|would|do|have|has|had|"
+        r"experiencing|experience)\b",
+        " ",
+        query,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove durations / measurements
+    query = re.sub(
+        r"\b\d+(?:\.\d+)?\s*"
+        r"(?:year|years|yr|yrs|day|days|week|weeks|"
+        r"month|months|hour|hours|kg|mg|g|°?f|°?c)\b",
+        " ",
+        query,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove standalone numbers
+    query = re.sub(
+        r"\b\d+(?:\.\d+)?\b",
+        " ",
+        query,
+    )
+
+    # Remove common medication details
+    query = re.sub(
+        r"\b(?:mr tablets?|tablets?|tablet|medicine|"
+        r"medicines?|medication|medications|"
+        r"capsules?|capsule|syrup)\b",
+        " ",
+        query,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove duplicate whitespace
+    query = " ".join(query.split())
+
+    # Keep the most relevant recent terms.
+    # This prevents the entire previous conversation from
+    # becoming part of the search query.
+    words = query.split()
+
+    if len(words) > 10:
+        words = words[-10:]
+
+    query = " ".join(words)
+
+    return query.strip()
+
+
+
+
+
+# ============================================================
 # URL VALIDATION
 # ============================================================
 
@@ -708,7 +779,6 @@ CONTENT:
         output
     )
 
-
 # ============================================================
 # HOME REMEDY WEB SEARCH
 # ============================================================
@@ -719,12 +789,14 @@ def search_home_remedies_web(
 ) -> str:
     """
     Search the web for safe home-remedy and self-care
-    information relevant to the patient's symptoms.
+    information relevant to the patient's current symptoms.
     """
 
+    clean_query = _clean_specialized_query(query)
+
     search_query = (
-        f"{query} home remedies "
-        f"self care reputable medical source"
+        f"{clean_query} "
+        f"home remedies self care"
     )
 
     print(
@@ -732,6 +804,12 @@ def search_home_remedies_web(
     )
 
     print(
+        "CLEAN QUERY:",
+        clean_query
+    )
+
+    print(
+        "SEARCH QUERY:",
         search_query
     )
 
@@ -803,7 +881,6 @@ SUMMARY:
         output
     )
 
-
 # ============================================================
 # YOGA WEB SEARCH
 # ============================================================
@@ -819,9 +896,11 @@ def search_yoga_web(
     Do not claim that yoga cures or treats a disease.
     """
 
+    clean_query = _clean_specialized_query(query)
+
     search_query = (
-        f"{query} gentle yoga poses "
-        f"beginner safe"
+        f"{clean_query} "
+        f"gentle yoga stretches beginner safe"
     )
 
     print(
@@ -829,6 +908,12 @@ def search_yoga_web(
     )
 
     print(
+        "CLEAN QUERY:",
+        clean_query
+    )
+
+    print(
+        "SEARCH QUERY:",
         search_query
     )
 
