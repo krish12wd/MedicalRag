@@ -4929,3 +4929,106 @@ body {
     }
 }
 
+/* =========================================================
+   DIET PLANNING
+   ========================================================= */
+
+.diet-dashboard {
+    width: min(
+        1050px,
+        100%
+    );
+
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.diet-chat-container {
+    padding: 22px;
+    min-height: 420px;
+    max-height: 85vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: #f7f8fc;
+}
+
+.diet-message {
+    max-width: 78%;
+    padding: 11px 14px;
+    border-radius: 13px;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.diet-message.assistant {
+    align-self: flex-start;
+    background: white;
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+
+.diet-message.user {
+    align-self: flex-end;
+    background: #3564ed;
+    color: white;
+}
+
+.diet-chat-form {
+    display: flex;
+    gap: 10px;
+    padding: 15px 20px;
+    border-top: 1px solid var(--border);
+    background: white;
+}
+
+.diet-chat-form input {
+    flex: 1;
+    height: 44px;
+    padding: 0 13px;
+    border: 1px solid #dce2ee;
+    border-radius: 10px;
+    outline: none;
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.diet-chat-form input:focus {
+    border-color: #5274ed;
+    box-shadow:
+        0 0 0 3px
+        rgba(53, 100, 237, 0.08);
+}
+
+.diet-chat-form button {
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 10px;
+    background:
+        linear-gradient(
+            100deg,
+            #3266ed,
+            #7138e8
+        );
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+@media (max-width: 600px) {
+
+    .diet-chat-container {
+        min-height: 380px;
+        max-height: 60vh;
+        padding: 15px;
+    }
+
+    .diet-message {
+        max-width: 88%;
+    }
+
+}

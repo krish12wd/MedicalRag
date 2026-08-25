@@ -13,6 +13,7 @@ from langchain_openai import ChatOpenAI
 import smtplib
 import threading
 import time
+import json
 
 from email.message import EmailMessage
 from functools import wraps
@@ -864,14 +865,40 @@ def generate_doctor_slots(
 
     current = start
 
+    now = datetime.now(IST)
+
+    is_today = (
+        appointment_date
+        == now.strftime("%Y-%m-%d")
+    )
+
     while current + timedelta(
         minutes=30
     ) <= end:
 
-        slots.append(
-            current.strftime(
-                "%I:%M %p"
+        slot_time = current.strftime(
+            "%I:%M %p"
+        )
+
+        if is_today:
+
+            slot_datetime = datetime.strptime(
+                f"{appointment_date} {slot_time}",
+                "%Y-%m-%d %I:%M %p"
+            ).replace(
+                tzinfo=IST
             )
+
+            if slot_datetime <= now:
+
+                current += timedelta(
+                    minutes=30
+                )
+
+                continue
+
+        slots.append(
+            slot_time
         )
 
         current += timedelta(
@@ -971,6 +998,32 @@ def init_db():
                 appointment_date,
                 slot_time
             )
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS diet_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            user_id INTEGER NOT NULL,
+
+            bmi REAL NOT NULL,
+
+            bmi_category TEXT NOT NULL,
+
+            daily_calories INTEGER NOT NULL,
+
+            answers TEXT NOT NULL,
+
+            diet_plan TEXT NOT NULL,
+
+            created_at TEXT NOT NULL,
+
+            FOREIGN KEY(user_id)
+            REFERENCES users(id)
+            ON DELETE CASCADE
         )
         """
     )
@@ -1639,14 +1692,25 @@ def appointment_slots():
                 "Invalid appointment date."
         }), 400
 
-    doctor = next(
-        (
-            doctor
-            for doctor in DOCTORS
-            if doctor["id"] == int(doctor_id)
-        ),
-        None
-    )
+    try:
+
+        doctor_id = int(
+            doctor_id
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
+
+        return jsonify({
+        "error":
+            "Invalid doctor."
+    }), 400
+
+    doctor = get_doctor_by_id(
+    doctor_id
+)
 
     if not doctor:
 
@@ -2389,28 +2453,36 @@ def book_appointment():
                 "Invalid appointment date."
         }), 400
 
-    if appointment_date < datetime.now().strftime("%Y-%m-%d"):
+    today_ist = datetime.now(
+        IST
+    ).date()
+
+    if appointment_date_obj.date() < today_ist:
 
         return jsonify({
             "error":
                 "Appointment date cannot be in the past."
         }), 400
 
-    doctor = next(
-        (
-            doctor
-            for doctor in DOCTORS
-            if doctor["id"] == int(doctor_id)
-        ),
-        None
-    )
+    try:
 
-    if not doctor:
+        doctor_id = int(
+            doctor_id
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
 
         return jsonify({
             "error":
-                "Doctor not found."
-        }), 404
+                "Invalid doctor."
+        }), 400
+
+    doctor = get_doctor_by_id(
+        doctor_id
+    )
 
     # --------------------------------------------------------
     # VERIFY THAT SLOT BELONGS TO DOCTOR'S TIMINGS
@@ -2458,7 +2530,9 @@ def book_appointment():
                     "Conversation not found."
             }), 404
 
-        now = datetime.now().isoformat()
+        now = datetime.now(
+            IST
+        ).isoformat()
 
         # ====================================================
         # PREVENT USER FROM BOOKING SAME DOCTOR AGAIN
@@ -4044,6 +4118,1127 @@ def yoga_suggestions():
     finally:
 
         connection.close()
+
+# ============================================================
+# DIET PLANNING
+# ============================================================
+
+@app.route(
+    "/diet-question",
+    methods=["POST"]
+)
+@login_required
+def diet_question():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error": "Invalid request data."
+        }), 400
+
+    field = data.get(
+        "field",
+        ""
+    )
+
+    history = data.get(
+        "history",
+        []
+    )
+
+    questions = {
+
+        "age":
+            "your age",
+
+        "gender":
+            "your gender",
+
+        "height":
+            "your height in centimeters (cm)",
+
+        "weight":
+            "your weight in kilograms (kg)",
+
+        "medical_condition":
+            "any medical condition or disease",
+
+        "allergies":
+            "any allergies",
+
+        "medications":
+            "any medicines or medications you currently take",
+
+        "dietary_preference":
+            "your dietary preference — Veg, Non-veg, Vegan, or Eggitarian",
+
+        "goal":
+            "your goal — weight loss, weight gain, muscle building, or fitness",
+    }
+
+    if field not in questions:
+
+        return jsonify({
+            "error": "Invalid diet question."
+        }), 400
+
+    history_text = "\n".join(
+        [
+            f"User answered {item.get('field')}: "
+            f"{item.get('answer')}"
+            for item in history
+        ]
+    )
+
+    prompt = f"""
+You are a friendly diet-planning assistant.
+
+Ask ONLY the following required question:
+
+{questions[field]}
+
+Use the same language/style as the user's previous answers.
+
+If the user is answering in Hinglish,
+ask the question in simple Hinglish.
+
+If the user is answering in English,
+ask the question in simple English.
+
+Do not ask anything else.
+Do not explain.
+Return ONLY the question.
+
+Previous answers:
+
+{history_text}
+"""
+
+    try:
+
+        response = title_llm.invoke(
+            prompt
+        )
+
+        question = str(
+            response.content
+        ).strip()
+
+        if not question:
+
+            question = (
+                "Please tell me "
+                + questions[field]
+                + "."
+            )
+
+        return jsonify({
+            "success": True,
+            "question": question
+        })
+
+    except Exception as error:
+
+        print(
+            "DIET QUESTION ERROR:",
+            repr(error)
+        )
+
+        return jsonify({
+            "error":
+                "Unable to generate the next diet question."
+        }), 500
+
+
+@app.route(
+    "/diet-plan",
+    methods=["POST"]
+)
+@login_required
+def diet_plan():
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        return jsonify({
+            "error": "Invalid request data."
+        }), 400
+
+    answers = data.get(
+        "answers",
+        {}
+    )
+
+    required_fields = [
+        "age",
+        "gender",
+        "height",
+        "weight",
+        "medical_condition",
+        "allergies",
+        "medications",
+        "dietary_preference",
+        "goal",
+    ]
+
+    for field in required_fields:
+
+        if not str(
+            answers.get(
+                field,
+                ""
+            )
+        ).strip():
+
+            return jsonify({
+                "error":
+                    "All diet planning questions are required."
+            }), 400
+
+
+    dietary_preference_raw = str(
+        answers["dietary_preference"]
+    ).strip().lower()
+
+    if (
+        "egg" in dietary_preference_raw
+        and "itarian" in dietary_preference_raw
+    ):
+        dietary_preference = "Eggitarian"
+
+    elif "vegan" in dietary_preference_raw:
+        dietary_preference = "Vegan"
+
+    elif "non" in dietary_preference_raw:
+        dietary_preference = "Non-veg"
+
+    elif "veg" in dietary_preference_raw:
+        dietary_preference = "Veg"
+
+    else:
+        return jsonify({
+            "error":
+                "Please provide a valid dietary preference: Veg, Non-veg, Vegan, or Eggitarian."
+        }), 400
+
+    answers["dietary_preference"] = dietary_preference
+
+    try:
+
+        age_match = re.search(
+            r"\d+(?:\.\d+)?",
+            str(
+                answers["age"]
+            )
+        )
+
+        height_match = re.search(
+            r"\d+(?:\.\d+)?",
+            str(
+                answers["height"]
+            )
+        )
+
+        weight_match = re.search(
+            r"\d+(?:\.\d+)?",
+            str(
+                answers["weight"]
+            )
+        )
+
+        if not age_match or not height_match or not weight_match:
+
+            raise ValueError(
+                "Invalid numeric values."
+            )
+
+        age = float(
+            age_match.group()
+        )
+
+        height = float(
+            height_match.group()
+        )
+
+        weight = float(
+            weight_match.group()
+        )
+
+    except Exception:
+
+        return jsonify({
+            "error":
+                "Please provide age, height in cm, and weight in kg using numbers."
+        }), 400
+
+    if (
+        age <= 0
+        or height <= 0
+        or weight <= 0
+    ):
+
+        return jsonify({
+            "error":
+                "Age, height and weight must be valid values."
+        }), 400
+
+    # ========================================================
+    # BMI
+    # ========================================================
+
+    height_m = (
+        height / 100
+    )
+
+    bmi = (
+        weight
+        / (
+            height_m
+            * height_m
+        )
+    )
+
+    bmi = round(
+        bmi,
+        1
+    )
+
+    if bmi < 18.5:
+
+        bmi_category = (
+            "Underweight"
+        )
+
+    elif bmi < 25:
+
+        bmi_category = (
+            "Normal weight"
+        )
+
+    elif bmi < 30:
+
+        bmi_category = (
+            "Overweight"
+        )
+
+    else:
+
+        bmi_category = (
+            "Obesity"
+        )
+
+    # ========================================================
+    # ESTIMATED DAILY CALORIES
+    # ========================================================
+
+    gender = str(
+    answers["gender"]
+    ).strip().lower()
+
+    if gender in [
+    "male",
+    "man",
+    "m",
+    "पुरुष"
+    ]:
+
+        bmr = (
+        10 * weight
+        + 6.25 * height
+        - 5 * age
+        + 5
+    )
+
+    elif gender in [
+    "female",
+    "woman",
+    "f",
+    "महिला"
+    ]:
+
+        bmr = (
+        10 * weight
+        + 6.25 * height
+        - 5 * age
+        - 161
+    )
+
+    else:
+
+        bmr = (
+        10 * weight
+        + 6.25 * height
+        - 5 * age
+        - 78
+    )
+
+    # Sedentary baseline because activity level is
+    # intentionally NOT added as another mandatory question.
+
+    maintenance_calories = (
+        bmr * 1.2
+    )
+
+    goal = str(
+        answers["goal"]
+    ).lower()
+
+    if (
+        "loss" in goal
+        or "ghatana" in goal
+        or "reduce" in goal
+    ):
+
+        daily_calories = (
+            maintenance_calories
+            - 400
+        )
+
+    elif (
+        "gain" in goal
+        or "badha" in goal
+        or "increase" in goal
+    ):
+
+        daily_calories = (
+            maintenance_calories
+            + 300
+        )
+
+    elif (
+        "muscle" in goal
+        or "muscle banana" in goal
+    ):
+
+        daily_calories = (
+            maintenance_calories
+            + 200
+        )
+
+    else:
+
+        daily_calories = (
+            maintenance_calories
+        )
+
+    daily_calories = round(
+        daily_calories
+    )
+    # ========================================================
+    # DIET PLAN GENERATION
+    # ========================================================
+
+    history = data.get(
+        "history",
+        []
+    )
+
+    history_text = "\n".join(
+        [
+            f"{item.get('field')}: "
+            f"{item.get('answer')}"
+            for item in history
+        ]
+    )
+
+    medical_condition = str(
+        answers["medical_condition"]
+    ).strip()
+
+    allergies = str(
+        answers["allergies"]
+    ).strip()
+
+    medications = str(
+        answers["medications"]
+    ).strip()
+
+    dietary_preference = str(
+        answers["dietary_preference"]
+    ).strip()
+
+    goal = str(
+        answers["goal"]
+    ).strip()
+
+    # --------------------------------------------------------
+    # Disease-specific safety instructions
+    # --------------------------------------------------------
+
+    disease_lower = (
+        medical_condition.lower()
+    )
+
+    disease_rules = []
+
+    if any(
+        term in disease_lower
+        for term in [
+            "diabetes",
+            "diabetic",
+            "sugar",
+            "type 1",
+            "type 2",
+        ]
+    ):
+
+        disease_rules.extend([
+            "Use diabetes-conscious meal planning.",
+            "Avoid sugary drinks and foods with added sugar.",
+            "Prefer high-fiber carbohydrate sources.",
+            "Use sensible carbohydrate portions.",
+            "Include non-starchy vegetables regularly.",
+            "Spread carbohydrate-containing foods across meals rather than concentrating them in one meal.",
+            "Do not claim that any food, herb, tea, or supplement treats or cures diabetes.",
+            "Consider the user's diabetes medicines when discussing meal timing.",
+            "Do not recommend fasting or extreme calorie restriction.",
+        ])
+
+    if any(
+        term in disease_lower
+        for term in [
+            "hypertension",
+            "high blood pressure",
+            "bp",
+        ]
+    ):
+
+        disease_rules.extend([
+            "Use a lower-sodium food pattern.",
+            "Avoid recommending highly processed and very salty foods.",
+            "Do not prescribe a specific sodium restriction unless medically appropriate.",
+        ])
+
+    if any(
+        term in disease_lower
+        for term in [
+            "kidney",
+            "renal",
+            "ckd",
+            "kidney disease",
+        ]
+    ):
+
+        disease_rules.extend([
+            "Do not make specific protein, potassium, phosphorus, or fluid prescriptions without appropriate clinical information.",
+            "Flag the need for individualized renal dietitian/doctor guidance.",
+        ])
+
+    if any(
+        term in disease_lower
+        for term in [
+            "liver",
+            "fatty liver",
+            "cirrhosis",
+            "hepatitis",
+        ]
+    ):
+
+        disease_rules.extend([
+            "Avoid alcohol recommendations.",
+            "Avoid extreme diets and unnecessary supplements.",
+            "Keep the plan balanced and appropriate to the reported condition.",
+        ])
+
+    if any(
+        term in disease_lower
+        for term in [
+            "thyroid",
+            "hypothyroid",
+            "hyperthyroid",
+        ]
+    ):
+
+        disease_rules.extend([
+            "Do not claim that specific foods can cure thyroid disease.",
+            "Do not recommend changing thyroid medication timing unless directed by the treating clinician.",
+        ])
+
+    if any(
+        term in disease_lower
+        for term in [
+            "gastritis",
+            "gerd",
+            "acid reflux",
+            "reflux",
+            "ulcer",
+        ]
+    ):
+
+        disease_rules.extend([
+            "Avoid unnecessarily spicy, very fatty, or strongly irritating meal suggestions.",
+            "Keep meals practical and moderate in portion size.",
+        ])
+
+    if not disease_rules:
+
+        disease_rules.append(
+            "Consider the reported medical condition carefully and avoid foods that may reasonably conflict with it."
+        )
+
+    disease_rules_text = "\n".join(
+        f"- {rule}"
+        for rule in disease_rules
+    )
+
+    # --------------------------------------------------------
+    # Allergy safety
+    # --------------------------------------------------------
+
+    allergy_instruction = f"""
+The user reported these allergies:
+
+{allergies}
+
+STRICT ALLERGY RULE:
+Do not recommend any food or ingredient that conflicts
+with the reported allergy.
+
+If the allergy information is ambiguous, do not guess.
+Avoid the uncertain ingredient and state that the user
+should verify the ingredient with a healthcare professional.
+"""
+
+    # --------------------------------------------------------
+    # Medication safety
+    # --------------------------------------------------------
+
+    medication_instruction = f"""
+The user reported these medications:
+
+{medications}
+
+Consider the medication information when designing
+meal timing and food choices.
+
+IMPORTANT:
+Do not guess the purpose, ingredients, dosage, or side
+effects of an unclear medication name.
+
+If the medication name is unclear or cannot be confidently
+identified from the supplied information, do not make
+medication-specific claims. Instead, clearly mention that
+the exact medication should be verified with the user's
+doctor or pharmacist before relying on medication-sensitive
+diet or meal-timing advice.
+
+Never tell the user to stop, start, increase, decrease,
+or change a prescribed medicine.
+"""
+
+    # --------------------------------------------------------
+    # Dietary preference
+    # --------------------------------------------------------
+
+    preference_instruction = f"""
+Dietary preference:
+
+{dietary_preference}
+
+STRICT FOOD-ELIGIBILITY RULE:
+Every food and ingredient in the entire 7-day plan MUST
+comply with the selected dietary preference.
+
+Selected preference: {dietary_preference}
+
+Rules:
+
+If Veg:
+- Vegetarian foods only.
+- Eggs are NOT allowed.
+- Chicken, fish, meat and seafood are NOT allowed.
+
+If Eggitarian:
+- Vegetarian foods and eggs are allowed.
+- Chicken is NOT allowed.
+- Fish is NOT allowed.
+- Meat is NOT allowed.
+- Seafood is NOT allowed.
+
+If Vegan:
+- Plant-based foods only.
+- Eggs are NOT allowed.
+- Milk, curd, paneer, cheese and other dairy are NOT allowed.
+- Chicken, fish, meat and seafood are NOT allowed.
+
+If Non-veg:
+- Vegetarian and non-vegetarian foods are allowed.
+
+Never write alternatives such as:
+"chicken/tofu",
+"fish/tofu",
+"if acceptable",
+"if non-veg",
+or similar conditional options.
+
+Generate the plan strictly for the selected preference.
+"""
+
+    # --------------------------------------------------------
+    # Goal
+    # --------------------------------------------------------
+
+    goal_instruction = f"""
+User goal:
+
+{goal}
+
+The meal plan must support the stated goal.
+
+Do not use extreme calorie restriction.
+
+Weight loss should use a reasonable calorie deficit.
+
+Weight gain should use a reasonable calorie surplus.
+
+Muscle-building should include adequate protein-rich foods
+appropriate to the user's dietary preference.
+
+Fitness should focus on balanced nutrition and sustainable
+eating habits.
+"""
+
+    # --------------------------------------------------------
+    # Calorie safety
+    # --------------------------------------------------------
+
+    calorie_instruction = f"""
+Estimated daily calorie target:
+
+{daily_calories} kcal/day
+
+This is an ESTIMATE, not a medical prescription.
+
+Do not present this number as the user's exact required
+calorie intake.
+
+Keep the weekly plan reasonably close to this estimate,
+while prioritizing medical safety, allergies, medications,
+dietary preference, and the user's stated goal.
+
+Do not create an extreme calorie deficit.
+"""
+
+    # --------------------------------------------------------
+    # Generate plan
+    # --------------------------------------------------------
+
+    prompt = f"""
+You are a careful personalized nutrition-planning assistant.
+
+Create a practical 7-day diet plan using ALL of the user's
+provided information.
+
+USER INFORMATION
+----------------
+
+Age:
+{age}
+
+Gender:
+{answers["gender"]}
+
+Height:
+{height} cm
+
+Weight:
+{weight} kg
+
+BMI:
+{bmi}
+
+BMI Category:
+{bmi_category}
+
+Medical Condition:
+{medical_condition}
+
+Allergies:
+{allergies}
+
+Medications:
+{medications}
+
+Dietary Preference:
+{dietary_preference}
+
+Goal:
+{goal}
+
+Estimated Daily Calories:
+{daily_calories} kcal/day
+
+
+DISEASE-SPECIFIC RULES
+----------------------
+
+{disease_rules_text}
+
+
+ALLERGY RULES
+-------------
+
+{allergy_instruction}
+
+
+MEDICATION RULES
+----------------
+
+{medication_instruction}
+
+
+DIETARY PREFERENCE RULES
+------------------------
+
+{preference_instruction}
+
+
+GOAL RULES
+----------
+
+{goal_instruction}
+
+
+CALORIE RULES
+-------------
+
+{calorie_instruction}
+
+
+LANGUAGE RULE
+-------------
+
+Use the same language as the user's answers.
+
+If the user answered in English,
+write the complete plan in English.
+
+If the user answered in Hinglish,
+write the complete plan in simple Hinglish.
+
+Do not randomly switch languages.
+
+
+7-DAY PLAN FORMAT
+-----------------
+
+Create Monday through Sunday.
+
+For EACH day include:
+
+• Early Morning
+• Breakfast
+• Mid-Morning
+• Lunch
+• Evening Snack
+• Dinner
+• Before Bed
+
+Give practical Indian food options and approximate portions
+where useful.
+
+Use variety across the seven days.
+
+Do not repeat the exact same meals every day.
+
+
+IMPORTANT SAFETY RULES
+----------------------
+
+- Do not diagnose the user.
+- Do not claim the diet will cure or treat a disease.
+- Do not prescribe medicines.
+- Do not tell the user to stop or change medication.
+- Do not recommend supplements as treatment.
+- Do not recommend herbal remedies as treatment.
+- Do not recommend extreme fasting.
+- Do not recommend an extreme calorie deficit.
+- Do not give a universal fixed water prescription such as
+  "3–4 liters daily".
+- Prefer water for normal hydration unless the user has been
+  instructed by a clinician to restrict fluids.
+- Do not include foods that conflict with allergies.
+- Do not include foods that conflict with the selected
+  dietary preference.
+- Consider the reported disease and medication information.
+- If medication information is unclear, do not guess.
+- If a medical condition makes a personalized diet potentially
+  high-risk, clearly recommend confirmation with a doctor or
+  registered dietitian.
+- Do not include foods that conflict with the selected
+  dietary preference.
+- Never provide conditional food alternatives that violate
+  the selected dietary preference.
+- Before finalizing the plan, internally check every meal
+  and ingredient against the selected dietary preference.
+- If any food violates the preference, replace it with a
+  compliant food before returning the plan.
+
+
+IMPORTANT FOR DIABETES
+----------------------
+
+If the user has diabetes:
+
+- Avoid sugary drinks.
+- Avoid foods with added sugar.
+- Prefer high-fiber carbohydrate sources.
+- Keep carbohydrate portions sensible.
+- Include plenty of non-starchy vegetables.
+- Spread carbohydrate-containing foods reasonably across meals.
+- Do not claim that any food, tea, herb, or supplement cures
+  or treats diabetes.
+- Do not recommend extreme fasting.
+- Consider meal timing in relation to diabetes medication.
+- If the exact diabetes medication is unclear, explicitly say
+  that it should be verified with the doctor/pharmacist.
+
+
+FINAL OUTPUT
+------------
+
+First provide:
+
+BMI: {bmi}
+BMI Category: {bmi_category}
+Estimated Daily Calorie Target: approximately {daily_calories} kcal/day
+
+Then provide the complete Monday-Sunday diet plan.
+
+At the end provide a short safety note saying that this is
+general personalized nutrition guidance and that users with
+medical conditions or medications should confirm the plan
+with their doctor or registered dietitian.
+
+Return ONLY the final diet-plan content.
+"""
+
+    try:
+
+        response = title_llm.invoke(
+        prompt
+        )
+
+        diet_plan_text = str(
+        response.content
+        ).strip()
+
+        if not diet_plan_text:
+
+            raise RuntimeError(
+                "Diet plan generation returned empty response."
+            )
+
+    except Exception as error:
+
+        print(
+            "DIET PLAN GENERATION ERROR:",
+            repr(error)
+        )
+
+        return jsonify({
+            "error":
+                "Unable to generate the diet plan."
+        }), 500
+
+    # ========================================================
+    # SEND EMAIL
+    # ========================================================
+
+    user = current_user()
+
+    email_sent = False
+
+    connection = get_db()
+
+    try:
+
+        connection.execute(
+            """
+            INSERT INTO diet_plans (
+                user_id,
+                bmi,
+                bmi_category,
+                daily_calories,
+                answers,
+                diet_plan,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session["user_id"],
+                bmi,
+                bmi_category,
+                daily_calories,
+                json.dumps(answers),
+                diet_plan_text,
+                datetime.now().isoformat(),
+            ),
+        )
+
+        connection.commit()
+
+    finally:
+
+        connection.close()
+
+    if user:
+
+        email_body = f"""
+Hello {user["name"]},
+
+Here is your personalized MediGuide 7-day diet plan.
+
+BMI: {bmi}
+BMI Category: {bmi_category}
+
+Estimated Daily Calorie Intake:
+{daily_calories} kcal/day
+
+Dietary Preference:
+{dietary_preference}
+
+Goal:
+{answers["goal"]}
+
+--------------------------------------------------
+7-DAY DIET PLAN
+--------------------------------------------------
+
+{diet_plan_text}
+
+Please use this plan as general dietary guidance.
+For medical conditions, allergies, pregnancy, or
+medications, consult your doctor/dietitian for
+personalized advice.
+
+MediGuide Team
+"""
+
+        email_sent = send_email(
+            user["email"],
+            "MediGuide - Your 7-Day Diet Plan",
+            email_body.strip()
+        )
+
+    return jsonify({
+        "success":
+            True,
+
+        "bmi":
+            bmi,
+
+        "bmi_category":
+            bmi_category,
+
+        "daily_calories":
+            daily_calories,
+
+        "diet_plan":
+            diet_plan_text,
+
+        "email_sent":
+            email_sent,
+    })
+
+
+
+# ============================================================
+# LOAD LATEST DIET PLAN
+# ============================================================
+
+@app.route(
+    "/diet-plan/latest",
+    methods=["GET"]
+)
+@login_required
+def latest_diet_plan():
+
+    connection = get_db()
+
+    try:
+
+        plan = connection.execute(
+            """
+            SELECT
+                bmi,
+                bmi_category,
+                daily_calories,
+                answers,
+                diet_plan,
+                created_at
+            FROM diet_plans
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (
+                session["user_id"],
+            ),
+        ).fetchone()
+
+        if not plan:
+
+            return jsonify({
+                "success":
+                    True,
+
+                "exists":
+                    False,
+            })
+
+        return jsonify({
+            "success":
+                True,
+
+            "exists":
+                True,
+
+            "bmi":
+                plan["bmi"],
+
+            "bmi_category":
+                plan["bmi_category"],
+
+            "daily_calories":
+                plan["daily_calories"],
+
+            "answers":
+                json.loads(
+                    plan["answers"]
+                ),
+
+            "diet_plan":
+                plan["diet_plan"],
+
+            "created_at":
+                plan["created_at"],
+        })
+
+    except Exception as error:
+
+        print(
+            "LATEST DIET PLAN ERROR:",
+            repr(error)
+        )
+
+        return jsonify({
+            "error":
+                "Unable to load your saved diet plan."
+        }), 500
+
+    finally:
+
+        connection.close()
+
 
 
 # ============================================================
