@@ -2024,6 +2024,188 @@ body {
     color: #a5adba;
 }
 
+/* =========================================================
+   MICROPHONE
+   ========================================================= */
+
+.mic-button {
+    width: 39px;
+    height: 39px;
+
+    flex-shrink: 0;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border: none;
+
+    border-radius: 11px;
+
+    background: transparent;
+
+    color: #667085;
+
+    cursor: pointer;
+
+    font-size: 16px;
+
+    transition:
+        background 0.15s ease,
+        color 0.15s ease,
+        transform 0.15s ease;
+}
+
+.mic-button:hover {
+    background: #eef3ff;
+
+    color: #3564ed;
+}
+
+.mic-button:active {
+    transform: scale(0.95);
+}
+
+.mic-button.listening {
+    background: #eef3ff;
+
+    color: #3564ed;
+
+    box-shadow:
+        0 0 0 3px
+        rgba(53, 100, 237, 0.10);
+}
+
+/* =========================================================
+   VOICE LISTENING BAR
+   ========================================================= */
+
+.voice-listening-bar {
+    flex: 1;
+    height: 54px;
+
+    display: flex;
+    align-items: center;
+
+    padding: 0 8px;
+
+    border: 1px solid #dfe3eb;
+    border-radius: 27px;
+
+    background: #ffffff;
+
+    overflow: hidden;
+}
+
+.voice-cancel-button,
+.voice-stop-button {
+    width: 40px;
+    height: 40px;
+
+    flex-shrink: 0;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border: 1px solid #dfe3eb;
+    border-radius: 50%;
+
+    background: #ffffff;
+
+    color: #667085;
+
+    cursor: pointer;
+
+    font-size: 18px;
+}
+
+.voice-stop-button {
+    background: #f1f3f7;
+    color: #667085;
+    font-size: 15px;
+}
+
+.voice-cancel-button:hover,
+.voice-stop-button:hover {
+    background: #f5f6f8;
+}
+
+.voice-wave {
+    flex: 1;
+
+    height: 42px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 4px;
+
+    margin: 0 14px;
+
+    overflow: hidden;
+}
+
+.voice-wave span {
+    width: 4px;
+
+    height: 8px;
+
+    border-radius: 4px;
+
+    background: #8d8f94;
+
+    animation: voiceWave 0.8s ease-in-out infinite alternate;
+}
+
+.voice-wave span:nth-child(2) {
+    animation-delay: 0.05s;
+}
+
+.voice-wave span:nth-child(3) {
+    animation-delay: 0.1s;
+}
+
+.voice-wave span:nth-child(4) {
+    animation-delay: 0.15s;
+}
+
+.voice-wave span:nth-child(5) {
+    animation-delay: 0.2s;
+}
+
+.voice-wave span:nth-child(6) {
+    animation-delay: 0.25s;
+}
+
+.voice-wave span:nth-child(7) {
+    animation-delay: 0.3s;
+}
+
+.voice-wave span:nth-child(8) {
+    animation-delay: 0.35s;
+}
+
+.voice-wave span:nth-child(9) {
+    animation-delay: 0.4s;
+}
+
+.voice-wave span:nth-child(10) {
+    animation-delay: 0.45s;
+}
+
+@keyframes voiceWave {
+
+    from {
+        height: 7px;
+    }
+
+    to {
+        height: 34px;
+    }
+}
+
 .send-button {
     width: 39px;
     height: 39px;
@@ -4458,6 +4640,37 @@ body {
         var(--text-muted);
 
     font-size: 9px;
+}
+
+.booking-unavailable-message {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.booking-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.booking-status-booked {
+    color: #16a34a;
+    background: #ecfdf3;
+    border: 1px solid #bbf7d0;
+}
+
+.booking-status-expired {
+    color: #dc2626;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
 }
 
 

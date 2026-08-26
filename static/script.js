@@ -5,6 +5,285 @@ const clearButton = document.getElementById("clearButton");
 const historyList = document.getElementById("historyList");
 
 // ============================================================
+// SPEECH TO TEXT
+// ============================================================
+
+const SpeechRecognition =
+    window.SpeechRecognition ||
+    window.webkitSpeechRecognition;
+
+let speechRecognition = null;
+let isListening = false;
+let manualStop = false;
+
+if (SpeechRecognition) {
+
+    const micButton =
+        document.createElement("button");
+
+    micButton.type = "button";
+    micButton.id = "micButton";
+    micButton.className = "mic-button";
+    micButton.title = "Use voice input";
+    micButton.setAttribute(
+        "aria-label",
+        "Use voice input"
+    );
+    micButton.textContent = "🎤︎︎";
+
+    sendButton.parentNode.insertBefore(
+        micButton,
+        sendButton
+    );
+
+    speechRecognition =
+        new SpeechRecognition();
+
+    speechRecognition.continuous = true;
+    speechRecognition.interimResults = false;
+    speechRecognition.lang = "en-IN";
+
+
+    function createVoiceBar() {
+
+        const bar =
+            document.createElement("div");
+
+        bar.className =
+            "voice-listening-bar";
+
+        bar.id =
+            "voiceListeningBar";
+
+        bar.innerHTML = `
+            <button
+                type="button"
+                class="voice-cancel-button"
+                id="voiceCancelButton"
+                title="Cancel">
+                ×
+            </button>
+
+            <div class="voice-wave">
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+
+            <button
+                type="button"
+                class="voice-stop-button"
+                id="voiceStopButton"
+                title="Stop listening">
+                ■
+            </button>
+        `;
+
+        return bar;
+    }
+
+
+    function showVoiceBar() {
+
+        const container =
+            sendButton.parentNode;
+
+        const bar =
+            createVoiceBar();
+
+        messageInput.style.display =
+            "none";
+
+        micButton.style.display =
+            "none";
+
+        sendButton.style.display =
+            "none";
+
+        container.insertBefore(
+            bar,
+            sendButton
+        );
+
+        document
+            .getElementById("voiceStopButton")
+            .addEventListener(
+                "click",
+                function () {
+
+                    manualStop = true;
+
+                    speechRecognition.stop();
+                }
+            );
+
+        document
+            .getElementById("voiceCancelButton")
+            .addEventListener(
+                "click",
+                function () {
+
+                    manualStop = true;
+
+                    speechRecognition.abort();
+
+                    messageInput.value =
+                        "";
+
+                    isListening =
+                        false;
+
+                    hideVoiceBar();
+                }
+            );
+    }
+
+
+    function hideVoiceBar() {
+
+        const bar =
+            document.getElementById(
+                "voiceListeningBar"
+            );
+
+        if (bar) {
+            bar.remove();
+        }
+
+        messageInput.style.display =
+            "";
+
+        micButton.style.display =
+            "";
+
+        sendButton.style.display =
+            "";
+
+        messageInput.focus();
+    }
+
+
+    micButton.addEventListener(
+        "click",
+        function () {
+
+            if (isListening) {
+
+                manualStop = true;
+                speechRecognition.stop();
+
+                return;
+            }
+
+            manualStop = false;
+            speechRecognition.start();
+        }
+    );
+
+
+    speechRecognition.onstart =
+        function () {
+
+            isListening =
+                true;
+
+            showVoiceBar();
+        };
+
+
+    speechRecognition.onresult =
+        function (event) {
+
+            let transcript = "";
+
+            for (
+                let i = event.resultIndex;
+                i < event.results.length;
+                i++
+            ) {
+                if (event.results[i].isFinal) {
+                    transcript +=
+                        event.results[i][0].transcript + " ";
+                }
+            }
+
+            transcript =
+                transcript.trim();
+
+            if (!transcript) {
+                return;
+            }
+
+            const existingText =
+                messageInput.value.trim();
+
+            messageInput.value =
+                existingText
+                    ? existingText + " " + transcript
+                    : transcript;
+        };
+
+
+    speechRecognition.onend =
+        function () {
+
+            if (isListening && !manualStop) {
+
+                setTimeout(
+                    function () {
+
+                        try {
+                            speechRecognition.start();
+                        } catch (error) {
+                            console.log(
+                                "Speech recognition restart:",
+                                error
+                            );
+                        }
+
+                    },
+                    100
+                );
+
+                return;
+            }
+
+            isListening =
+                false;
+
+            hideVoiceBar();
+        };
+
+
+    speechRecognition.onerror =
+        function (event) {
+
+            console.error(
+                "SPEECH RECOGNITION ERROR:",
+                event.error
+            );
+
+            isListening =
+                false;
+
+            hideVoiceBar();
+        };
+
+} else {
+
+    console.warn(
+        "Speech recognition is not supported in this browser."
+    );
+}
+
+// ============================================================
 // PROFILE MENU
 // ============================================================
 
@@ -1806,33 +2085,179 @@ function createBookingCard(
 
         actions = `
 
-            <div class="booking-card-actions">
+        <div class="booking-card-actions">
 
-                <button
-                    type="button"
-                    class="booking-edit-button"
-                >
-                    Edit
-                </button>
+            <button
+                type="button"
+                class="booking-edit-button"
+            >
+                Edit
+            </button>
 
-                <button
-                    type="button"
-                    class="booking-cancel-button"
-                >
-                    Cancel Booking
-                </button>
+            <button
+                type="button"
+                class="booking-cancel-button"
+            >
+                Cancel Booking
+            </button>
 
-            </div>
-        `;
+        </div>
+    `;
 
     } else {
 
+        const now = new Date();
+
+        function parseAppointmentDateTime(booking) {
+            const dateValue = String(
+                booking.appointment_date || ""
+            ).trim();
+
+            const timeValue = String(
+                booking.slot_time || ""
+            ).trim();
+
+            if (!dateValue || !timeValue) {
+                return null;
+            }
+
+            let year;
+            let month;
+            let day;
+
+            // YYYY-MM-DD
+            let match = dateValue.match(
+                /^(\d{4})-(\d{1,2})-(\d{1,2})$/
+            );
+
+            if (match) {
+                year = Number(match[1]);
+                month = Number(match[2]) - 1;
+                day = Number(match[3]);
+            }
+
+            // DD-MM-YYYY / DD/MM/YYYY
+            if (!match) {
+                match = dateValue.match(
+                    /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/
+                );
+
+                if (match) {
+                    day = Number(match[1]);
+                    month = Number(match[2]) - 1;
+                    year = Number(match[3]);
+                }
+            }
+
+            // DD Mon YYYY
+            if (!match) {
+                const parsedDate =
+                    new Date(dateValue);
+
+                if (!Number.isNaN(parsedDate.getTime())) {
+                    year = parsedDate.getFullYear();
+                    month = parsedDate.getMonth();
+                    day = parsedDate.getDate();
+                }
+            }
+
+            if (
+                year === undefined ||
+                month === undefined ||
+                day === undefined
+            ) {
+                return null;
+            }
+
+            // Supports:
+            // 10:30 AM
+            // 10:30 AM - 11:00 AM
+            // 10:30
+            // 10:30:00
+            const timeMatch =
+                timeValue.match(
+                    /(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i
+                );
+
+            if (!timeMatch) {
+                return null;
+            }
+
+            let hours =
+                Number(timeMatch[1]);
+
+            const minutes =
+                Number(timeMatch[2]);
+
+            const seconds =
+                Number(timeMatch[3] || 0);
+
+            const period =
+                timeMatch[4]
+                    ? timeMatch[4].toUpperCase()
+                    : null;
+
+            // Convert 12-hour time to 24-hour time
+            if (period === "PM" && hours !== 12) {
+                hours += 12;
+            }
+
+            if (period === "AM" && hours === 12) {
+                hours = 0;
+            }
+
+            return new Date(
+                year,
+                month,
+                day,
+                hours,
+                minutes,
+                seconds,
+                0
+            );
+        }
+
+        const appointmentDateTime =
+            parseAppointmentDateTime(booking);
+
+        const isExpired =
+            appointmentDateTime !== null &&
+            now.getTime() >= appointmentDateTime.getTime();
+
+        console.log(
+            "BOOKING TIME CHECK:",
+            booking.appointment_date,
+            booking.appointment_time,
+            "=>",
+            appointmentDateTime,
+            "NOW:",
+            now,
+            "EXPIRED:",
+            isExpired
+        );
+
         actions = `
 
-            <div class="booking-unavailable-message">
+        <div class="booking-unavailable-message">
+
+            <span>
                 Changes unavailable within 6 hours
-            </div>
-        `;
+            </span>
+
+            <span
+                class="booking-status ${isExpired
+                ? "booking-status-expired"
+                : "booking-status-booked"
+            }"
+            >
+                ${isExpired
+                ? "Expired"
+                : "Booked"
+            }
+            </span>
+
+        </div>
+    `;
     }
 
     card.innerHTML = `
