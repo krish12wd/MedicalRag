@@ -2066,6 +2066,16 @@ body {
     transform: scale(0.95);
 }
 
+.mic-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.mic-button:disabled:hover {
+    background: transparent;
+    color: #667085;
+}
+
 .mic-button.listening {
     background: #eef3ff;
 

@@ -16,25 +16,48 @@ let speechRecognition = null;
 let isListening = false;
 let manualStop = false;
 
-if (SpeechRecognition) {
+// ------------------------------------------------------------
+// CREATE MIC BUTTON
+// ------------------------------------------------------------
 
-    const micButton =
-        document.createElement("button");
+const micButton = document.createElement("button");
 
-    micButton.type = "button";
-    micButton.id = "micButton";
-    micButton.className = "mic-button";
-    micButton.title = "Use voice input";
-    micButton.setAttribute(
-        "aria-label",
-        "Use voice input"
+micButton.type = "button";
+micButton.id = "micButton";
+micButton.className = "mic-button";
+micButton.title = "Use voice input";
+micButton.setAttribute("aria-label", "Use voice input");
+micButton.innerHTML = '<i class="fa fa-microphone" aria-hidden="true"></i>';
+
+// Insert mic before send button
+sendButton.parentNode.insertBefore(
+    micButton,
+    sendButton
+);
+
+
+// ============================================================
+// BROWSER SUPPORT CHECK
+// ============================================================
+
+if (!SpeechRecognition) {
+
+    console.warn(
+        "Speech recognition is not supported in this browser."
     );
-    micButton.textContent = "🎤︎︎";
 
-    sendButton.parentNode.insertBefore(
-        micButton,
-        sendButton
-    );
+    micButton.disabled = true;
+    micButton.title =
+        "Voice input is not supported in this browser";
+
+    micButton.style.opacity = "0.45";
+    micButton.style.cursor = "not-allowed";
+
+} else {
+
+    // --------------------------------------------------------
+    // CREATE SPEECH RECOGNITION
+    // --------------------------------------------------------
 
     speechRecognition =
         new SpeechRecognition();
@@ -43,6 +66,10 @@ if (SpeechRecognition) {
     speechRecognition.interimResults = false;
     speechRecognition.lang = "en-IN";
 
+
+    // ========================================================
+    // VOICE BAR
+    // ========================================================
 
     function createVoiceBar() {
 
@@ -95,6 +122,16 @@ if (SpeechRecognition) {
         const container =
             sendButton.parentNode;
 
+        const existingBar =
+            document.getElementById(
+                "voiceListeningBar"
+            );
+
+        // Prevent duplicate bars
+        if (existingBar) {
+            return;
+        }
+
         const bar =
             createVoiceBar();
 
@@ -112,6 +149,11 @@ if (SpeechRecognition) {
             sendButton
         );
 
+
+        // ----------------------------------------------------
+        // STOP
+        // ----------------------------------------------------
+
         document
             .getElementById("voiceStopButton")
             .addEventListener(
@@ -120,9 +162,25 @@ if (SpeechRecognition) {
 
                     manualStop = true;
 
-                    speechRecognition.stop();
+                    try {
+                        speechRecognition.stop();
+                    } catch (error) {
+                        console.log(
+                            "Speech stop error:",
+                            error
+                        );
+
+                        isListening = false;
+
+                        hideVoiceBar();
+                    }
                 }
             );
+
+
+        // ----------------------------------------------------
+        // CANCEL
+        // ----------------------------------------------------
 
         document
             .getElementById("voiceCancelButton")
@@ -132,13 +190,18 @@ if (SpeechRecognition) {
 
                     manualStop = true;
 
-                    speechRecognition.abort();
+                    try {
+                        speechRecognition.abort();
+                    } catch (error) {
+                        console.log(
+                            "Speech abort error:",
+                            error
+                        );
+                    }
 
-                    messageInput.value =
-                        "";
+                    messageInput.value = "";
 
-                    isListening =
-                        false;
+                    isListening = false;
 
                     hideVoiceBar();
                 }
@@ -170,33 +233,89 @@ if (SpeechRecognition) {
     }
 
 
+    // ========================================================
+    // MIC CLICK
+    // ========================================================
+
     micButton.addEventListener(
         "click",
         function () {
 
+            if (!speechRecognition) {
+                return;
+            }
+
+
+            // ----------------------------------------------
+            // STOP CURRENT LISTENING
+            // ----------------------------------------------
+
             if (isListening) {
 
                 manualStop = true;
-                speechRecognition.stop();
+
+                try {
+                    speechRecognition.stop();
+                } catch (error) {
+                    console.log(
+                        "Speech stop error:",
+                        error
+                    );
+                }
 
                 return;
             }
 
+
+            // ----------------------------------------------
+            // START LISTENING
+            // ----------------------------------------------
+
             manualStop = false;
-            speechRecognition.start();
+
+            try {
+
+                speechRecognition.start();
+
+            } catch (error) {
+
+                console.error(
+                    "Speech recognition start error:",
+                    error
+                );
+
+                isListening = false;
+
+                hideVoiceBar();
+            }
         }
     );
 
 
+    // ========================================================
+    // ON START
+    // ========================================================
+
     speechRecognition.onstart =
         function () {
 
-            isListening =
-                true;
+            console.log(
+                "Speech recognition started."
+            );
+
+            isListening = true;
+
+            micButton.classList.add(
+                "listening"
+            );
 
             showVoiceBar();
         };
 
+
+    // ========================================================
+    // ON RESULT
+    // ========================================================
 
     speechRecognition.onresult =
         function (event) {
@@ -208,59 +327,116 @@ if (SpeechRecognition) {
                 i < event.results.length;
                 i++
             ) {
-                if (event.results[i].isFinal) {
+
+                if (
+                    event.results[i].isFinal
+                ) {
+
                     transcript +=
-                        event.results[i][0].transcript + " ";
+                        event.results[i][0]
+                            .transcript + " ";
                 }
             }
 
+
             transcript =
                 transcript.trim();
+
 
             if (!transcript) {
                 return;
             }
 
+
             const existingText =
                 messageInput.value.trim();
+
 
             messageInput.value =
                 existingText
                     ? existingText + " " + transcript
                     : transcript;
+
+
+            // Trigger input event if needed
+            messageInput.dispatchEvent(
+                new Event(
+                    "input",
+                    {
+                        bubbles: true
+                    }
+                )
+            );
         };
 
+
+    // ========================================================
+    // ON END
+    // ========================================================
 
     speechRecognition.onend =
         function () {
 
-            if (isListening && !manualStop) {
+            console.log(
+                "Speech recognition ended."
+            );
+
+
+            // Browser automatically stopped
+            // but user didn't press stop/cancel.
+            if (
+                isListening &&
+                !manualStop
+            ) {
 
                 setTimeout(
                     function () {
 
+                        if (!isListening) {
+                            return;
+                        }
+
                         try {
+
                             speechRecognition.start();
+
                         } catch (error) {
+
                             console.log(
                                 "Speech recognition restart:",
                                 error
                             );
+
+                            isListening = false;
+
+                            micButton.classList.remove(
+                                "listening"
+                            );
+
+                            hideVoiceBar();
                         }
 
                     },
-                    100
+                    150
                 );
 
                 return;
             }
 
-            isListening =
-                false;
+
+            isListening = false;
+
+            micButton.classList.remove(
+                "listening"
+            );
 
             hideVoiceBar();
         };
 
+
+    // ========================================================
+    // ON ERROR
+    // ========================================================
 
     speechRecognition.onerror =
         function (event) {
@@ -270,17 +446,82 @@ if (SpeechRecognition) {
                 event.error
             );
 
-            isListening =
-                false;
+
+            isListening = false;
+
+            micButton.classList.remove(
+                "listening"
+            );
+
+
+            // ----------------------------------------------
+            // PERMISSION DENIED
+            // ----------------------------------------------
+
+            if (
+                event.error ===
+                "not-allowed"
+            ) {
+
+                micButton.title =
+                    "Microphone permission denied. Allow microphone access in browser settings.";
+
+                console.warn(
+                    "Microphone permission was denied."
+                );
+            }
+
+
+            // ----------------------------------------------
+            // NO SPEECH
+            // ----------------------------------------------
+
+            else if (
+                event.error ===
+                "no-speech"
+            ) {
+
+                console.warn(
+                    "No speech detected."
+                );
+            }
+
+
+            // ----------------------------------------------
+            // AUDIO CAPTURE ERROR
+            // ----------------------------------------------
+
+            else if (
+                event.error ===
+                "audio-capture"
+            ) {
+
+                micButton.title =
+                    "Microphone could not be accessed.";
+
+                console.warn(
+                    "Microphone/audio capture failed."
+                );
+            }
+
+
+            // ----------------------------------------------
+            // NETWORK ERROR
+            // ----------------------------------------------
+
+            else if (
+                event.error ===
+                "network"
+            ) {
+
+                console.warn(
+                    "Speech recognition network error."
+                );
+            }
+
 
             hideVoiceBar();
         };
-
-} else {
-
-    console.warn(
-        "Speech recognition is not supported in this browser."
-    );
 }
 
 // ============================================================
