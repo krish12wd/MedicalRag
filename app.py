@@ -1540,16 +1540,27 @@ def appointment_doctors():
         # ====================================================
 
         booked_doctor_rows = connection.execute(
-            """
-            SELECT DISTINCT doctor_id
-            FROM appointments
-            WHERE user_id = ?
-            AND status = 'booked'
-            """,
-            (
-                user_id,
-            ),
-        ).fetchall()
+    """
+    SELECT DISTINCT doctor_id
+    FROM appointments
+    WHERE user_id = ?
+    AND status = 'booked'
+    AND (
+        appointment_date > ?
+        OR (
+            appointment_date = ?
+            AND datetime(
+                appointment_date || ' ' || slot_time
+            ) > datetime('now', 'localtime')
+        )
+    )
+    """,
+    (
+        user_id,
+        datetime.now(IST).strftime("%Y-%m-%d"),
+        datetime.now(IST).strftime("%Y-%m-%d"),
+    ),
+).fetchall()
 
         booked_doctor_ids = {
             int(row["doctor_id"])
@@ -1740,18 +1751,29 @@ def appointment_slots():
         # ====================================================
 
         booked_rows = connection.execute(
-            """
-            SELECT slot_time
-            FROM appointments
-            WHERE doctor_id = ?
-            AND appointment_date = ?
-            AND status = 'booked'
-            """,
-            (
-                doctor_id,
-                appointment_date,
-            ),
-        ).fetchall()
+    """
+    SELECT slot_time
+    FROM appointments
+    WHERE doctor_id = ?
+    AND appointment_date = ?
+    AND status = 'booked'
+    AND (
+        appointment_date > ?
+        OR (
+            appointment_date = ?
+            AND datetime(
+                appointment_date || ' ' || slot_time
+            ) > datetime('now', 'localtime')
+        )
+    )
+    """,
+    (
+        doctor_id,
+        appointment_date,
+        datetime.now(IST).strftime("%Y-%m-%d"),
+        datetime.now(IST).strftime("%Y-%m-%d"),
+    ),
+).fetchall()
 
         booked_slots = {
             row["slot_time"]
@@ -1764,20 +1786,23 @@ def appointment_slots():
         # ====================================================
 
         user_booking_rows = connection.execute(
-            """
-            SELECT
-                slot_time,
-                doctor_id
-            FROM appointments
-            WHERE user_id = ?
-            AND appointment_date = ?
-            AND status = 'booked'
-            """,
-            (
-                user_id,
-                appointment_date,
-            ),
-        ).fetchall()
+    """
+    SELECT
+        slot_time,
+        doctor_id
+    FROM appointments
+    WHERE user_id = ?
+    AND appointment_date = ?
+    AND status = 'booked'
+    AND datetime(
+        appointment_date || ' ' || slot_time
+    ) > datetime('now', 'localtime')
+    """,
+    (
+        user_id,
+        appointment_date,
+    ),
+).fetchall()
 
         user_booked_slots = {}
 
@@ -1817,13 +1842,24 @@ def appointment_slots():
             WHERE user_id = ?
             AND doctor_id = ?
             AND status = 'booked'
-            LIMIT 1
-            """,
-            (
-                user_id,
-                doctor_id,
-            ),
-        ).fetchone()
+            AND (
+                appointment_date > ?
+                OR (
+                appointment_date = ?
+                AND datetime(
+                    appointment_date || ' ' || slot_time
+                ) > datetime('now', 'localtime')
+            )
+        )
+        LIMIT 1
+        """,
+        (
+            user_id,
+            doctor_id,
+            datetime.now(IST).strftime("%Y-%m-%d"),
+            datetime.now(IST).strftime("%Y-%m-%d"),
+        ),
+    ).fetchone()
 
         doctor_already_booked = (
             existing_doctor_booking

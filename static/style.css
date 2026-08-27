@@ -2256,6 +2256,55 @@ body {
     color: #a0a8b5;
 }
 
+/* =========================================================
+   DIET PLANNING FIX
+   ========================================================= */
+
+.diet-dashboard {
+    width: min(1050px, 100%);
+    max-height: 90vh;
+    background: white;
+    border-radius: 18px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.diet-dashboard .profile-dashboard-header {
+    flex-shrink: 0;
+}
+
+.diet-back-button {
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 9px;
+    background: #f4f6fb;
+    color: #64748b;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.diet-back-button:hover {
+    background: #e9edf7;
+}
+
+.diet-chat-container {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+}
+
+.diet-chat-form {
+    flex-shrink: 0;
+}
 
 /* =========================================================
    RESPONSIVE

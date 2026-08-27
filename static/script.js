@@ -5028,10 +5028,13 @@ async function openConversation(
 
         if (!response.ok) {
 
-            alert(
-                data.error ||
-                "Unable to open conversation."
+            currentConversationId = null;
+
+            localStorage.removeItem(
+                "currentConversationId"
             );
+
+            clearChatUI();
 
             return;
         }
@@ -5166,6 +5169,10 @@ async function deleteConversation(
 
             currentConversationId =
                 null;
+
+            localStorage.removeItem(
+                "currentConversationId"
+            );
 
             clearChatUI();
         }
