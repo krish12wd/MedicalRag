@@ -486,6 +486,51 @@ def appointment_reminder_worker():
 
             connection = get_db()
 
+            expired_appointments = connection.execute(
+                """
+                SELECT
+                    id,
+                    appointment_date,
+                    slot_time
+                FROM appointments
+                WHERE status = 'booked'
+                """
+            ).fetchall()
+
+            for expired in expired_appointments:
+
+                try:
+
+                    appointment_datetime = (
+                        get_appointment_datetime(
+                            expired["appointment_date"],
+                            expired["slot_time"]
+                        )
+                    )
+
+                    if appointment_datetime <= now:
+
+                        connection.execute(
+                            """
+                            UPDATE appointments
+                            SET status = 'expired'
+                            WHERE id = ?
+                            AND status = 'booked'
+                            """,
+                            (
+                                expired["id"],
+                            ),
+                        )
+
+                except Exception as expiry_error:
+
+                    print(
+                        "EXPIRY UPDATE ERROR:",
+                        repr(expiry_error)
+                    )
+
+            connection.commit()
+
             appointments = connection.execute(
                 """
                 SELECT
@@ -998,6 +1043,30 @@ def init_db():
                 appointment_date,
                 slot_time
             )
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS appointment_slot_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            user_id INTEGER NOT NULL,
+
+            doctor_id INTEGER NOT NULL,
+
+            appointment_date TEXT NOT NULL,
+
+            slot_time TEXT NOT NULL,
+
+            action TEXT NOT NULL,
+
+            created_at TEXT NOT NULL,
+
+            FOREIGN KEY(user_id)
+            REFERENCES users(id)
+            ON DELETE CASCADE
         )
         """
     )
@@ -1780,6 +1849,36 @@ def appointment_slots():
             for row in booked_rows
         }
 
+                # ====================================================
+        # SLOTS BLOCKED FOR THIS USER AFTER 2 CANCELLATIONS
+        # SAME DOCTOR + SAME DATE + SAME SLOT
+        # ====================================================
+
+        blocked_history_rows = connection.execute(
+            """
+            SELECT
+                slot_time,
+                COUNT(*) AS cancellation_count
+            FROM appointment_slot_history
+            WHERE user_id = ?
+            AND doctor_id = ?
+            AND appointment_date = ?
+            AND action = 'cancelled'
+            GROUP BY slot_time
+            HAVING COUNT(*) >= 2
+            """,
+            (
+                user_id,
+                doctor_id,
+                appointment_date,
+            ),
+        ).fetchall()
+
+        blocked_slots = {
+            row["slot_time"]
+            for row in blocked_history_rows
+        }
+
         # ====================================================
         # CURRENT USER'S BOOKINGS ON SAME DATE
         # FOR OTHER DOCTORS
@@ -1883,6 +1982,11 @@ def appointment_slots():
             "booked_slots":
                 list(
                     booked_slots
+                ),
+
+            "blocked_slots":
+                list(
+                    blocked_slots
                 ),
 
             "user_booked_slots":
@@ -2238,19 +2342,40 @@ def edit_appointment():
             }), 409
 
         connection.execute(
-            """
-            UPDATE appointments
-            SET slot_time = ?
-            WHERE id = ?
-            AND user_id = ?
-            AND status = 'booked'
-            """,
-            (
-                new_slot_time,
-                appointment["id"],
-                session["user_id"],
-            ),
-        )
+        """
+    UPDATE appointments
+    SET status = 'cancelled'
+    WHERE id = ?
+    AND user_id = ?
+    AND status = 'booked'
+    """,
+    (
+        appointment_id,
+        session["user_id"],
+    ),
+)
+
+        connection.execute(
+    """
+    INSERT INTO appointment_slot_history (
+        user_id,
+        doctor_id,
+        appointment_date,
+        slot_time,
+        action,
+        created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?)
+    """,
+    (
+        session["user_id"],
+        appointment["doctor_id"],
+        appointment["appointment_date"],
+        appointment["slot_time"],
+        "cancelled",
+        datetime.now(IST).isoformat(),
+    ),
+)
 
         connection.commit()
 
@@ -2367,6 +2492,28 @@ def cancel_appointment():
             (
                 appointment_id,
                 session["user_id"],
+            ),
+        )
+
+        connection.execute(
+            """
+            INSERT INTO appointment_slot_history (
+                user_id,
+                doctor_id,
+                appointment_date,
+                slot_time,
+                action,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session["user_id"],
+                appointment["doctor_id"],
+                appointment["appointment_date"],
+                appointment["slot_time"],
+                "cancelled",
+                datetime.now(IST).isoformat(),
             ),
         )
 
@@ -2570,11 +2717,50 @@ def book_appointment():
             IST
         ).isoformat()
 
-        # ====================================================
-        # PREVENT USER FROM BOOKING SAME DOCTOR AGAIN
+                # ====================================================
+        # BLOCK SAME SLOT AFTER 2 CANCELLATIONS
+        # SAME USER + DOCTOR + DATE + SLOT
         # ====================================================
 
-        existing_doctor_booking = connection.execute(
+        cancellation_count_row = connection.execute(
+            """
+            SELECT COUNT(*) AS cancellation_count
+            FROM appointment_slot_history
+            WHERE user_id = ?
+            AND doctor_id = ?
+            AND appointment_date = ?
+            AND slot_time = ?
+            AND action = 'cancelled'
+            """,
+            (
+                user_id,
+                doctor_id,
+                appointment_date,
+                slot_time,
+            ),
+        ).fetchone()
+
+        cancellation_count = (
+            cancellation_count_row["cancellation_count"]
+        )
+
+        if cancellation_count >= 2:
+
+            return jsonify({
+                "success":
+                    False,
+
+                "error":
+                    "You have already exceeded the booking and canceled times of this slot, please contact admin."
+            }), 409
+
+                # ====================================================
+        # PREVENT USER FROM BOOKING SAME DOCTOR AGAIN
+        # ONLY ACTIVE / FUTURE APPOINTMENTS COUNT
+        # EXPIRED APPOINTMENTS DO NOT BLOCK NEW BOOKING
+        # ====================================================
+
+        existing_doctor_bookings = connection.execute(
             """
             SELECT id
             FROM appointments
@@ -2582,22 +2768,22 @@ def book_appointment():
             AND doctor_id = ?
             AND status = 'booked'
             LIMIT 1
-            """,
-            (
-                user_id,
-                doctor_id,
-            ),
-        ).fetchone()
+        """,
+        (
+            user_id,
+            doctor_id,
+        ),
+            ).fetchone()
 
-        if existing_doctor_booking:
+        if existing_doctor_bookings:
 
             return jsonify({
-                "success":
-                    False,
+            "success":
+                False,
 
-                "error":
-                    "You already have an appointment with this doctor."
-            }), 409
+            "error":
+                "You already have an appointment with this doctor."
+        }), 409
 
         # ----------------------------------------------------
         # ATOMIC BOOKING
@@ -2606,29 +2792,75 @@ def book_appointment():
 
         try:
 
-            connection.execute(
+            # ====================================================
+            # REUSE CANCELLED / EXPIRED SLOT
+            # ====================================================
+
+            reusable_slot = connection.execute(
                 """
-                INSERT INTO appointments (
-                    user_id,
-                    conversation_id,
-                    doctor_id,
-                    appointment_date,
-                    slot_time,
-                    status,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                SELECT id
+                FROM appointments
+                WHERE doctor_id = ?
+                AND appointment_date = ?
+                AND slot_time = ?
+                AND status IN ('cancelled', 'expired')
+                LIMIT 1
                 """,
                 (
-                    user_id,
-                    conversation_id,
                     doctor_id,
                     appointment_date,
                     slot_time,
-                    "booked",
-                    now,
                 ),
-            )
+            ).fetchone()
+
+            if reusable_slot:
+
+                connection.execute(
+                    """
+                    UPDATE appointments
+                    SET
+                        user_id = ?,
+                        conversation_id = ?,
+                        status = 'booked',
+                        created_at = ?,
+                        reminder_24h_sent = 0,
+                        reminder_1h_sent = 0
+                    WHERE id = ?
+                    AND status IN ('cancelled', 'expired')
+                    """,
+                    (
+                        user_id,
+                        conversation_id,
+                        now,
+                        reusable_slot["id"],
+                    ),
+                )
+
+            else:
+
+                connection.execute(
+                    """
+                    INSERT INTO appointments (
+                        user_id,
+                        conversation_id,
+                        doctor_id,
+                        appointment_date,
+                        slot_time,
+                        status,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        conversation_id,
+                        doctor_id,
+                        appointment_date,
+                        slot_time,
+                        "booked",
+                        now,
+                    ),
+                )
 
             connection.commit()
 
@@ -2934,7 +3166,6 @@ def my_bookings():
                 created_at
             FROM appointments
             WHERE user_id = ?
-            AND status = 'booked'
             ORDER BY
                 appointment_date ASC,
                 slot_time ASC
@@ -2956,7 +3187,8 @@ def my_bookings():
                 continue
 
             can_modify = (
-                appointment_changes_allowed(
+                row["status"] == "booked"
+                and appointment_changes_allowed(
                     row["appointment_date"],
                     row["slot_time"]
                 )

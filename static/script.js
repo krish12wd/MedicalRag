@@ -17,20 +17,28 @@ let isListening = false;
 let manualStop = false;
 let silenceTimer = null;
 
+const SILENCE_TIMEOUT = 7000;
+
+
 // ------------------------------------------------------------
 // CREATE MIC BUTTON
 // ------------------------------------------------------------
 
-const micButton = document.createElement("button");
+const micButton =
+    document.createElement("button");
 
 micButton.type = "button";
 micButton.id = "micButton";
 micButton.className = "mic-button";
 micButton.title = "Use voice input";
-micButton.setAttribute("aria-label", "Use voice input");
-micButton.innerHTML = '<i class="fa fa-microphone" aria-hidden="true"></i>';
+micButton.setAttribute(
+    "aria-label",
+    "Use voice input"
+);
 
-// Insert mic before send button
+micButton.innerHTML =
+    '<i class="fa fa-microphone" aria-hidden="true"></i>';
+
 sendButton.parentNode.insertBefore(
     micButton,
     sendButton
@@ -48,11 +56,14 @@ if (!SpeechRecognition) {
     );
 
     micButton.disabled = true;
+
     micButton.title =
         "Voice input is not supported in this browser";
 
     micButton.style.opacity = "0.45";
-    micButton.style.cursor = "not-allowed";
+
+    micButton.style.cursor =
+        "not-allowed";
 
 } else {
 
@@ -63,9 +74,101 @@ if (!SpeechRecognition) {
     speechRecognition =
         new SpeechRecognition();
 
-    speechRecognition.continuous = true;
-    speechRecognition.interimResults = false;
-    speechRecognition.lang = "en-IN";
+    speechRecognition.continuous =
+        true;
+
+    speechRecognition.interimResults =
+        false;
+
+    speechRecognition.lang =
+        "en-IN";
+
+
+    // ========================================================
+    // RESET SILENCE TIMER
+    // ========================================================
+
+    function resetSilenceTimer() {
+
+        clearTimeout(
+            silenceTimer
+        );
+
+        silenceTimer =
+            setTimeout(
+                function () {
+
+                    if (!isListening) {
+                        return;
+                    }
+
+                    console.log(
+                        "7 seconds silence. Stopping speech recognition."
+                    );
+
+                    manualStop = true;
+
+                    stopSpeechRecognition();
+
+                },
+                SILENCE_TIMEOUT
+            );
+    }
+
+
+    // ========================================================
+    // STOP SPEECH RECOGNITION
+    // ========================================================
+
+    function stopSpeechRecognition() {
+
+        clearTimeout(
+            silenceTimer
+        );
+
+        manualStop = true;
+
+        isListening = false;
+
+        try {
+
+            speechRecognition.stop();
+
+        } catch (error) {
+
+            console.log(
+                "Speech stop error:",
+                error
+            );
+
+            finishVoiceSession();
+
+        }
+    }
+
+
+    // ========================================================
+    // FINISH VOICE SESSION
+    // ========================================================
+
+    function finishVoiceSession() {
+
+        clearTimeout(
+            silenceTimer
+        );
+
+        silenceTimer = null;
+
+        isListening = false;
+
+        manualStop = true;
+
+        micButton.classList.remove(
+            "listening"
+        );
+
+        hideVoiceBar();
+    }
 
 
     // ========================================================
@@ -84,15 +187,18 @@ if (!SpeechRecognition) {
             "voiceListeningBar";
 
         bar.innerHTML = `
+
             <button
                 type="button"
                 class="voice-cancel-button"
                 id="voiceCancelButton"
-                title="Cancel">
+                title="Cancel"
+            >
                 ×
             </button>
 
             <div class="voice-wave">
+
                 <span></span>
                 <span></span>
                 <span></span>
@@ -103,15 +209,18 @@ if (!SpeechRecognition) {
                 <span></span>
                 <span></span>
                 <span></span>
+
             </div>
 
             <button
                 type="button"
                 class="voice-stop-button"
                 id="voiceStopButton"
-                title="Stop listening">
+                title="Stop listening"
+            >
                 ■
             </button>
+
         `;
 
         return bar;
@@ -128,7 +237,6 @@ if (!SpeechRecognition) {
                 "voiceListeningBar"
             );
 
-        // Prevent duplicate bars
         if (existingBar) {
             return;
         }
@@ -152,63 +260,84 @@ if (!SpeechRecognition) {
 
 
         // ----------------------------------------------------
-        // STOP
+        // STOP BUTTON
         // ----------------------------------------------------
 
-        document
-            .getElementById("voiceStopButton")
-            .addEventListener(
-                "click",
-                function () {
-
-                    manualStop = true;
-                    clearTimeout(silenceTimer);
-
-                    try {
-                        speechRecognition.stop();
-                    } catch (error) {
-                        console.log(
-                            "Speech stop error:",
-                            error
-                        );
-
-                        isListening = false;
-
-                        hideVoiceBar();
-                    }
-                }
+        const stopButton =
+            bar.querySelector(
+                "#voiceStopButton"
             );
 
+        stopButton.addEventListener(
+            "click",
+            function (event) {
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                console.log(
+                    "VOICE STOP BUTTON CLICKED"
+                );
+
+                stopSpeechRecognition();
+
+            }
+        );
+
 
         // ----------------------------------------------------
-        // CANCEL
+        // CANCEL BUTTON
         // ----------------------------------------------------
 
-        document
-            .getElementById("voiceCancelButton")
-            .addEventListener(
-                "click",
-                function () {
-
-                    manualStop = true;
-                    clearTimeout(silenceTimer);
-
-                    try {
-                        speechRecognition.abort();
-                    } catch (error) {
-                        console.log(
-                            "Speech abort error:",
-                            error
-                        );
-                    }
-
-                    messageInput.value = "";
-
-                    isListening = false;
-
-                    hideVoiceBar();
-                }
+        const cancelButton =
+            bar.querySelector(
+                "#voiceCancelButton"
             );
+
+        cancelButton.addEventListener(
+            "click",
+            function (event) {
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                console.log(
+                    "VOICE CANCEL BUTTON CLICKED"
+                );
+
+                clearTimeout(
+                    silenceTimer
+                );
+
+                silenceTimer = null;
+
+                manualStop = true;
+
+                isListening = false;
+
+                try {
+
+                    speechRecognition.abort();
+
+                } catch (error) {
+
+                    console.log(
+                        "Speech abort error:",
+                        error
+                    );
+
+                }
+
+                messageInput.value = "";
+
+                micButton.classList.remove(
+                    "listening"
+                );
+
+                hideVoiceBar();
+
+            }
+        );
     }
 
 
@@ -242,40 +371,47 @@ if (!SpeechRecognition) {
 
     micButton.addEventListener(
         "click",
-        function () {
+        function (event) {
+
+            event.preventDefault();
 
             if (!speechRecognition) {
                 return;
             }
 
 
-            // ----------------------------------------------
+            // ------------------------------------------------
             // STOP CURRENT LISTENING
-            // ----------------------------------------------
+            // ------------------------------------------------
 
             if (isListening) {
 
-                manualStop = true;
-                clearTimeout(silenceTimer);
+                console.log(
+                    "MIC CLICK -> STOP"
+                );
 
-                try {
-                    speechRecognition.stop();
-                } catch (error) {
-                    console.log(
-                        "Speech stop error:",
-                        error
-                    );
-                }
+                stopSpeechRecognition();
 
                 return;
             }
 
 
-            // ----------------------------------------------
+            // ------------------------------------------------
             // START LISTENING
-            // ----------------------------------------------
+            // ------------------------------------------------
+
+            console.log(
+                "MIC CLICK -> START"
+            );
+
+            clearTimeout(
+                silenceTimer
+            );
+
+            silenceTimer = null;
 
             manualStop = false;
+
             messageInput.value = "";
 
             try {
@@ -291,8 +427,13 @@ if (!SpeechRecognition) {
 
                 isListening = false;
 
+                micButton.classList.remove(
+                    "listening"
+                );
+
                 hideVoiceBar();
             }
+
         }
     );
 
@@ -310,41 +451,16 @@ if (!SpeechRecognition) {
 
             isListening = true;
 
+            manualStop = false;
+
             micButton.classList.add(
                 "listening"
             );
 
             showVoiceBar();
 
-            // Start 15-second timer immediately.
-            // If user says nothing, stop automatically.
-            clearTimeout(silenceTimer);
+            resetSilenceTimer();
 
-            silenceTimer =
-                setTimeout(
-                    function () {
-
-                        if (isListening) {
-
-                            manualStop = true;
-
-                            try {
-                                speechRecognition.stop();
-                            } catch (error) {
-
-                                console.log(
-                                    "Speech silence timeout:",
-                                    error
-                                );
-
-                                isListening = false;
-                                hideVoiceBar();
-                            }
-                        }
-
-                    },
-                    7000
-                );
         };
 
 
@@ -369,59 +485,47 @@ if (!SpeechRecognition) {
 
                     transcript +=
                         event.results[i][0]
-                            .transcript + " ";
-                }
-            }
+                            .transcript
+                            .trim() + " ";
 
+                }
+
+            }
 
             transcript =
                 transcript.trim();
-
 
             if (!transcript) {
                 return;
             }
 
 
-            // Replace the current voice-session text
+            // ------------------------------------------------
+            // APPEND NEW SPEECH
+            // ------------------------------------------------
+
+            const existingText =
+                messageInput.value.trim();
+
             messageInput.value =
-                transcript;
+                existingText
+                    ? existingText +
+                    " " +
+                    transcript
+                    : transcript;
 
 
-            // Reset 15-second silence timer whenever speech is received
-            clearTimeout(silenceTimer);
+            // ------------------------------------------------
+            // RESET SILENCE TIMER
+            // ------------------------------------------------
 
-            silenceTimer =
-                setTimeout(
-                    function () {
-
-                        if (isListening) {
-
-                            manualStop = true;
-
-                            try {
-
-                                speechRecognition.stop();
-
-                            } catch (error) {
-
-                                console.log(
-                                    "Speech silence timeout:",
-                                    error
-                                );
-
-                                isListening = false;
-
-                                hideVoiceBar();
-                            }
-                        }
-
-                    },
-                    7000
-                );
+            resetSilenceTimer();
 
 
-            // Trigger input event if needed
+            // ------------------------------------------------
+            // TRIGGER INPUT EVENT
+            // ------------------------------------------------
+
             messageInput.dispatchEvent(
                 new Event(
                     "input",
@@ -430,6 +534,12 @@ if (!SpeechRecognition) {
                     }
                 )
             );
+
+            console.log(
+                "VOICE RESULT:",
+                transcript
+            );
+
         };
 
 
@@ -443,20 +553,43 @@ if (!SpeechRecognition) {
             console.log(
                 "Speech recognition ended."
             );
-            clearTimeout(silenceTimer);
 
 
-            // Browser automatically stopped
-            // but user didn't press stop/cancel.
-            if (
-                isListening &&
-                !manualStop
-            ) {
+            clearTimeout(
+                silenceTimer
+            );
+
+            silenceTimer = null;
+
+
+            // ------------------------------------------------
+            // IMPORTANT:
+            // If user pressed STOP/CANCEL or silence timeout
+            // happened, DO NOT restart recognition.
+            // ------------------------------------------------
+
+            if (manualStop) {
+
+                finishVoiceSession();
+
+                return;
+            }
+
+
+            // ------------------------------------------------
+            // Browser stopped recognition automatically.
+            // Restart only when the user is still listening.
+            // ------------------------------------------------
+
+            if (isListening) {
 
                 setTimeout(
                     function () {
 
-                        if (!isListening) {
+                        if (
+                            !isListening ||
+                            manualStop
+                        ) {
                             return;
                         }
 
@@ -467,36 +600,30 @@ if (!SpeechRecognition) {
                         } catch (error) {
 
                             console.log(
-                                "Speech recognition restart:",
+                                "Speech recognition restart error:",
                                 error
                             );
 
-                            isListening = false;
+                            finishVoiceSession();
 
-                            micButton.classList.remove(
-                                "listening"
-                            );
-
-                            hideVoiceBar();
                         }
 
                     },
-                    150
+                    200
                 );
 
                 return;
             }
 
 
-            isListening = false;
+            finishVoiceSession();
 
-            micButton.classList.remove(
-                "listening"
-            );
-
-            hideVoiceBar();
         };
 
+
+    // ========================================================
+    // ON ERROR
+    // ========================================================
 
     speechRecognition.onerror =
         function (event) {
@@ -507,9 +634,9 @@ if (!SpeechRecognition) {
             );
 
 
-            // ----------------------------------------------
+            // ------------------------------------------------
             // NO SPEECH
-            // ----------------------------------------------
+            // ------------------------------------------------
 
             if (
                 event.error ===
@@ -517,23 +644,37 @@ if (!SpeechRecognition) {
             ) {
 
                 console.warn(
-                    "No speech detected. Waiting for 7-second timer."
+                    "No speech detected."
+                );
+
+                if (isListening) {
+                    resetSilenceTimer();
+                }
+
+                return;
+            }
+
+
+            // ------------------------------------------------
+            // ABORTED
+            // ------------------------------------------------
+
+            if (
+                event.error ===
+                "aborted"
+            ) {
+
+                console.log(
+                    "Speech recognition aborted."
                 );
 
                 return;
             }
 
 
-            isListening = false;
-
-            micButton.classList.remove(
-                "listening"
-            );
-
-
-            // ----------------------------------------------
+            // ------------------------------------------------
             // PERMISSION DENIED
-            // ----------------------------------------------
+            // ------------------------------------------------
 
             if (
                 event.error ===
@@ -543,15 +684,12 @@ if (!SpeechRecognition) {
                 micButton.title =
                     "Microphone permission denied. Allow microphone access in browser settings.";
 
-                console.warn(
-                    "Microphone permission was denied."
-                );
             }
 
 
-            // ----------------------------------------------
+            // ------------------------------------------------
             // AUDIO CAPTURE ERROR
-            // ----------------------------------------------
+            // ------------------------------------------------
 
             else if (
                 event.error ===
@@ -561,15 +699,12 @@ if (!SpeechRecognition) {
                 micButton.title =
                     "Microphone could not be accessed.";
 
-                console.warn(
-                    "Microphone/audio capture failed."
-                );
             }
 
 
-            // ----------------------------------------------
+            // ------------------------------------------------
             // NETWORK ERROR
-            // ----------------------------------------------
+            // ------------------------------------------------
 
             else if (
                 event.error ===
@@ -579,11 +714,32 @@ if (!SpeechRecognition) {
                 console.warn(
                     "Speech recognition network error."
                 );
+
             }
 
 
+            // ------------------------------------------------
+            // REAL ERROR
+            // ------------------------------------------------
+
+            isListening = false;
+
+            manualStop = true;
+
+            clearTimeout(
+                silenceTimer
+            );
+
+            silenceTimer = null;
+
+            micButton.classList.remove(
+                "listening"
+            );
+
             hideVoiceBar();
+
         };
+
 }
 
 // ============================================================
@@ -2409,154 +2565,50 @@ function createBookingCard(
 
     } else {
 
-        const now = new Date();
+        let statusClass =
+            "booking-status-booked";
 
-        function parseAppointmentDateTime(booking) {
-            const dateValue = String(
-                booking.appointment_date || ""
-            ).trim();
+        let statusText =
+            "Booked";
 
-            const timeValue = String(
-                booking.slot_time || ""
-            ).trim();
+        if (
+            booking.status === "cancelled"
+        ) {
 
-            if (!dateValue || !timeValue) {
-                return null;
-            }
+            statusClass =
+                "booking-status-cancelled";
 
-            let year;
-            let month;
-            let day;
+            statusText =
+                "Cancelled";
 
-            // YYYY-MM-DD
-            let match = dateValue.match(
-                /^(\d{4})-(\d{1,2})-(\d{1,2})$/
-            );
+        } else if (
+            booking.status === "expired"
+        ) {
 
-            if (match) {
-                year = Number(match[1]);
-                month = Number(match[2]) - 1;
-                day = Number(match[3]);
-            }
+            statusClass =
+                "booking-status-expired";
 
-            // DD-MM-YYYY / DD/MM/YYYY
-            if (!match) {
-                match = dateValue.match(
-                    /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/
-                );
-
-                if (match) {
-                    day = Number(match[1]);
-                    month = Number(match[2]) - 1;
-                    year = Number(match[3]);
-                }
-            }
-
-            // DD Mon YYYY
-            if (!match) {
-                const parsedDate =
-                    new Date(dateValue);
-
-                if (!Number.isNaN(parsedDate.getTime())) {
-                    year = parsedDate.getFullYear();
-                    month = parsedDate.getMonth();
-                    day = parsedDate.getDate();
-                }
-            }
-
-            if (
-                year === undefined ||
-                month === undefined ||
-                day === undefined
-            ) {
-                return null;
-            }
-
-            // Supports:
-            // 10:30 AM
-            // 10:30 AM - 11:00 AM
-            // 10:30
-            // 10:30:00
-            const timeMatch =
-                timeValue.match(
-                    /(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i
-                );
-
-            if (!timeMatch) {
-                return null;
-            }
-
-            let hours =
-                Number(timeMatch[1]);
-
-            const minutes =
-                Number(timeMatch[2]);
-
-            const seconds =
-                Number(timeMatch[3] || 0);
-
-            const period =
-                timeMatch[4]
-                    ? timeMatch[4].toUpperCase()
-                    : null;
-
-            // Convert 12-hour time to 24-hour time
-            if (period === "PM" && hours !== 12) {
-                hours += 12;
-            }
-
-            if (period === "AM" && hours === 12) {
-                hours = 0;
-            }
-
-            return new Date(
-                year,
-                month,
-                day,
-                hours,
-                minutes,
-                seconds,
-                0
-            );
+            statusText =
+                "Expired";
         }
-
-        const appointmentDateTime =
-            parseAppointmentDateTime(booking);
-
-        const isExpired =
-            appointmentDateTime !== null &&
-            now.getTime() >= appointmentDateTime.getTime();
-
-        console.log(
-            "BOOKING TIME CHECK:",
-            booking.appointment_date,
-            booking.appointment_time,
-            "=>",
-            appointmentDateTime,
-            "NOW:",
-            now,
-            "EXPIRED:",
-            isExpired
-        );
 
         actions = `
 
         <div class="booking-unavailable-message">
 
             <span>
-                Changes unavailable within 6 hours
+                ${booking.status === "cancelled"
+                ? "This appointment has been cancelled"
+                : booking.status === "expired"
+                    ? "This appointment has expired"
+                    : "Changes unavailable within 6 hours"
+            }
             </span>
 
             <span
-                class="booking-status ${isExpired
-                ? "booking-status-expired"
-                : "booking-status-booked"
-            }"
+                class="booking-status ${statusClass}"
             >
-                ${isExpired
-                ? "Expired"
-                : "Booked"
-            }
+                ${statusText}
             </span>
 
         </div>
@@ -3854,6 +3906,11 @@ async function loadAvailableSlots(
                 data.booked_slots || []
             );
 
+        const blockedSlots =
+            new Set(
+                data.blocked_slots || []
+            );
+
         const userBookedSlots =
             data.user_booked_slots || {};
 
@@ -3915,6 +3972,13 @@ async function loadAvailableSlots(
                 // =================================================
                 // SLOT BOOKED FOR THIS DOCTOR
                 // =================================================
+
+
+                // =================================================
+                // USER BLOCKED THIS SLOT AFTER 2 CANCELLATIONS
+                // =================================================
+
+
 
                 if (
                     bookedSlots.has(
@@ -4062,6 +4126,19 @@ async function loadAvailableSlots(
                 if (
                     !selectedSlot
                 ) {
+
+                    return;
+                }
+
+                if (
+                    blockedSlots.has(
+                        selectedSlot
+                    )
+                ) {
+
+                    alert(
+                        "You have already exceeded the booking and canceled times of this slot, please contact admin."
+                    );
 
                     return;
                 }

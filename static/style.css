@@ -4732,6 +4732,12 @@ body {
     border: 1px solid #fecaca;
 }
 
+.booking-status-cancelled {
+    color: #6b7280;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+}
+
 
 .my-bookings-empty {
 
