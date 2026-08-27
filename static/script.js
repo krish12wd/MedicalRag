@@ -15,6 +15,7 @@ const SpeechRecognition =
 let speechRecognition = null;
 let isListening = false;
 let manualStop = false;
+let silenceTimer = null;
 
 // ------------------------------------------------------------
 // CREATE MIC BUTTON
@@ -161,6 +162,7 @@ if (!SpeechRecognition) {
                 function () {
 
                     manualStop = true;
+                    clearTimeout(silenceTimer);
 
                     try {
                         speechRecognition.stop();
@@ -189,6 +191,7 @@ if (!SpeechRecognition) {
                 function () {
 
                     manualStop = true;
+                    clearTimeout(silenceTimer);
 
                     try {
                         speechRecognition.abort();
@@ -253,6 +256,7 @@ if (!SpeechRecognition) {
             if (isListening) {
 
                 manualStop = true;
+                clearTimeout(silenceTimer);
 
                 try {
                     speechRecognition.stop();
@@ -272,6 +276,7 @@ if (!SpeechRecognition) {
             // ----------------------------------------------
 
             manualStop = false;
+            messageInput.value = "";
 
             try {
 
@@ -310,6 +315,36 @@ if (!SpeechRecognition) {
             );
 
             showVoiceBar();
+
+            // Start 15-second timer immediately.
+            // If user says nothing, stop automatically.
+            clearTimeout(silenceTimer);
+
+            silenceTimer =
+                setTimeout(
+                    function () {
+
+                        if (isListening) {
+
+                            manualStop = true;
+
+                            try {
+                                speechRecognition.stop();
+                            } catch (error) {
+
+                                console.log(
+                                    "Speech silence timeout:",
+                                    error
+                                );
+
+                                isListening = false;
+                                hideVoiceBar();
+                            }
+                        }
+
+                    },
+                    7000
+                );
         };
 
 
@@ -348,14 +383,42 @@ if (!SpeechRecognition) {
             }
 
 
-            const existingText =
-                messageInput.value.trim();
-
-
+            // Replace the current voice-session text
             messageInput.value =
-                existingText
-                    ? existingText + " " + transcript
-                    : transcript;
+                transcript;
+
+
+            // Reset 15-second silence timer whenever speech is received
+            clearTimeout(silenceTimer);
+
+            silenceTimer =
+                setTimeout(
+                    function () {
+
+                        if (isListening) {
+
+                            manualStop = true;
+
+                            try {
+
+                                speechRecognition.stop();
+
+                            } catch (error) {
+
+                                console.log(
+                                    "Speech silence timeout:",
+                                    error
+                                );
+
+                                isListening = false;
+
+                                hideVoiceBar();
+                            }
+                        }
+
+                    },
+                    7000
+                );
 
 
             // Trigger input event if needed
@@ -380,6 +443,7 @@ if (!SpeechRecognition) {
             console.log(
                 "Speech recognition ended."
             );
+            clearTimeout(silenceTimer);
 
 
             // Browser automatically stopped
@@ -434,10 +498,6 @@ if (!SpeechRecognition) {
         };
 
 
-    // ========================================================
-    // ON ERROR
-    // ========================================================
-
     speechRecognition.onerror =
         function (event) {
 
@@ -445,6 +505,23 @@ if (!SpeechRecognition) {
                 "SPEECH RECOGNITION ERROR:",
                 event.error
             );
+
+
+            // ----------------------------------------------
+            // NO SPEECH
+            // ----------------------------------------------
+
+            if (
+                event.error ===
+                "no-speech"
+            ) {
+
+                console.warn(
+                    "No speech detected. Waiting for 7-second timer."
+                );
+
+                return;
+            }
 
 
             isListening = false;
@@ -468,21 +545,6 @@ if (!SpeechRecognition) {
 
                 console.warn(
                     "Microphone permission was denied."
-                );
-            }
-
-
-            // ----------------------------------------------
-            // NO SPEECH
-            // ----------------------------------------------
-
-            else if (
-                event.error ===
-                "no-speech"
-            ) {
-
-                console.warn(
-                    "No speech detected."
                 );
             }
 
