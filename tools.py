@@ -1169,7 +1169,7 @@ Use careful wording such as:
 
 - may be associated with
 - can be seen with
-- should be interpreted in clinical context
+- should be interpreted in clinical contex
 - warrants clinical correlation
 
 If the laboratory itself provides an interpretation,

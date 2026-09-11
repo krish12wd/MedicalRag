@@ -23,4 +23,5 @@ dependencies = [
     "sentence-transformers>=5.7.0",
     "streamlit>=1.61.1",
     "requests>=2.32.0",
+    "fastmcp>=2.0.0,<3.0.0",
 ]

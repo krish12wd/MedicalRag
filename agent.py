@@ -11,12 +11,7 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 
-from tools import (
-    search_medical_guidelines,
-    search_medical_web,
-    search_home_remedies_web,
-    search_yoga_web,
-)
+from mcp_bridge import call_mcp_tool
 
 
 # ============================================================
@@ -282,11 +277,6 @@ def current_topic_context(messages):
     # --------------------------------------------------------
     # If no clear new complaint is found, use the recent
     # conversation. This handles follow-up answers such as:
-    #
-    # "60 days"
-    # "thinning all over"
-    # "no"
-    # --------------------------------------------------------
 
     if latest_complaint_index is None:
 
@@ -997,11 +987,9 @@ def medical_retrieval_node(
     try:
 
         result = (
-            search_medical_guidelines.invoke(
-                {
-                    "query":
-                        query
-                }
+            call_mcp_tool(
+                "medical_guidelines",
+                {"query": query}    
             )
         )
 
@@ -1257,12 +1245,10 @@ def medical_web_node(
     try:
 
         result = (
-            search_medical_web.invoke(
-                {
-                    "query":
-                        conversation
-                }
-            )
+            call_mcp_tool(
+    "medical_web_search",
+    {"query": conversation},
+)
         )
 
     except Exception as error:
@@ -1370,12 +1356,10 @@ def home_remedy_node(
     try:
 
         result = (
-            search_home_remedies_web.invoke(
-                {
-                    "query":
-                        query
-                }
-            )
+            call_mcp_tool(
+    "home_remedies_search",
+    {"query": query},
+)
         )
 
     except Exception as error:
@@ -1429,12 +1413,10 @@ def yoga_node(
     try:
 
         result = (
-            search_yoga_web.invoke(
-                {
-                    "query":
-                        query
-                }
-            )
+            call_mcp_tool(
+    "yoga_search",
+    {"query": query},
+)
         )
 
     except Exception as error:
@@ -2379,10 +2361,6 @@ Return ONLY the patient-facing answer.
 # ENSURE HOME REMEDIES / YOGA HEADING
 # ========================================================
 
-        # ========================================================
-    # ENSURE HOME REMEDIES / YOGA HEADING
-    # ========================================================
-
     if intent == "home_remedy":
 
         # Remove any existing variation of the heading
@@ -2694,7 +2672,7 @@ from typing import TypedDict
 
 from langgraph.graph import StateGraph, END
 
-from tools import analyze_blood_report
+
 
 
 # ============================================================
@@ -2744,12 +2722,10 @@ def analyze_blood_report_node(
         "CALLING BLOOD REPORT TOOL"
     )
 
-    result = analyze_blood_report.invoke(
-        {
-            "file_path":
-                file_path,
-        }
-    )
+    result = call_mcp_tool(
+    "blood_report_analysis",
+    {"file_path": file_path},
+)
 
     print(
         "BLOOD REPORT TOOL COMPLETED"
